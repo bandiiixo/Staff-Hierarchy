@@ -1,44 +1,85 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090909"><title>KNG Estate | Staff Portal</title>
-<link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090909">
+  <title>KNG Estate | Organisation</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <button class="hamburger" id="menuToggle" aria-label="Open navigation" aria-expanded="false"><span></span><span></span><span></span></button>
-  <a class="brand" href="#" id="homeLink"><span class="brand-mark">K</span><span class="brand-copy"><strong>KNG <i>ESTATE</i></strong><small>STAFF MANAGEMENT</small></span></a>
-  <div class="top-actions"><span class="live"><i></i> STAFF PORTAL</span><div id="userArea"></div></div>
-</header>
-<div class="scrim" id="scrim"></div>
-<aside class="sidebar" id="sidebar" aria-label="Main navigation">
-  <div class="side-top"><span class="side-label">WORKSPACE</span><button id="closeMenu" class="close-menu" aria-label="Close navigation">×</button></div>
-  <nav id="mainNav">
-    <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>Overview</button>
-    <div class="nav-label">TEAM ROSTERS</div>
-    <button class="nav-item" data-team="gangs"><span class="nav-icon">♟</span>Gangs</button>
-    <button class="nav-item" data-team="legal"><span class="nav-icon">⚖</span>Legal</button>
-    <button class="nav-item" data-team="actions"><span class="nav-icon">✦</span>Actions</button>
-    <button class="nav-item" data-team="interactions"><span class="nav-icon">↔</span>Interactions</button>
-    <button class="nav-item" data-team="calls"><span class="nav-icon">☎</span>Calls</button>
-    <button class="nav-item" data-team="order"><span class="nav-icon">◈</span>Order</button>
-    <button class="nav-item" data-team="knowledge"><span class="nav-icon">▤</span>Knowledge</button>
-    <button class="nav-item" data-team="discord"><span class="nav-icon">◉</span>Discord</button>
-    <button class="nav-item" data-team="tickets"><span class="nav-icon">▣</span>Tickets</button>
-    <button class="nav-item" data-team="wallstreet"><span class="nav-icon">＄</span>WallStreet</button>
-    <div id="managementNav" hidden><div class="nav-label">MANAGEMENT</div>
-      <button class="nav-item" data-page="management"><span class="nav-icon">⚙</span>Staff & Permissions</button>
-      <button class="nav-item" data-page="organisation"><span class="nav-icon">⌘</span>Organisation Chart</button>
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="KNG Estate home">
+      <span class="brand-mark">K</span>
+      <span class="brand-copy"><strong>KNG <i>ESTATE</i></strong><small>ORGANISATION</small></span>
+    </a>
+    <div class="top-actions">
+      <span class="live"><span></span> LIVE STRUCTURE</span>
+      <span class="admin-status" id="adminStatus">VIEW ONLY</span>
+      <button class="button button-quiet" id="loginToggle">Management login</button>
+      <button class="button button-quiet" id="logoutButton" hidden>Log out</button>
+      <button class="button button-quiet" id="editToggle" hidden>Edit chart</button>
     </div>
-  </nav>
-  <div class="sidebar-foot"><span class="status-dot"></span> KNG ESTATE INTERNAL</div>
-</aside>
-<main id="mainContent">
-  <section class="hero" id="hero"><div class="eyebrow"><span></span> KNG ESTATE STAFF MANAGEMENT</div><h1>ONE PORTAL. <em>EVERY TEAM.</em></h1><p>Manage team rosters, roles and staff access in one place.</p></section>
-  <section id="pageContent"><div class="loading"><span class="spinner"></span>Loading your workspace…</div></section>
-  <footer class="site-footer"><span>© KNG ESTATE</span><span>BUILT FOR THE COMMUNITY.</span></footer>
-</main>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js"></script>
-</body></html>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="eyebrow"><span></span> LEADERSHIP &amp; MANAGEMENT</div>
+      <h1>KNG ESTATE <em>ORGANISATION</em></h1>
+      <p>A clear view of the people and positions behind KNG Estate.</p>
+      <div class="stats"><strong id="positionCount">0 POSITIONS</strong><span></span><strong>CURRENT STRUCTURE</strong></div>
+    </section>
+
+    <section class="chart-panel">
+      <div class="panel-heading">
+        <div><div class="section-kicker">THE STRUCTURE</div><h2>Leadership chart</h2></div>
+        <div class="scroll-hint">SCROLL TO EXPLORE <b>↔</b></div>
+      </div>
+      <div class="chart-viewport" id="chartViewport">
+        <div class="chart" id="chart" aria-live="polite"></div>
+      </div>
+      <div class="panel-footer"><span><i></i> KNG ESTATE LEADERSHIP</span><span>INTERNAL ORGANISATION STRUCTURE</span></div>
+    </section>
+
+    <section class="login-panel" id="loginPanel" hidden>
+      <form id="loginForm" class="login-card">
+        <div class="section-kicker">MANAGEMENT ACCESS</div>
+        <h2>Sign in to edit the hierarchy</h2>
+        <p>Use the management password supplied by the portal owner.</p>
+        <label>Management password<input id="adminPassword" type="password" autocomplete="current-password" required></label>
+        <div class="form-actions">
+          <button class="button button-primary" type="submit" id="loginSubmit">Log in</button>
+          <button class="button button-quiet" type="button" id="loginCancel">Cancel</button>
+        </div>
+        <p class="hint" id="loginMessage" role="status"></p>
+      </form>
+    </section>
+
+    <section class="editor" id="editor" hidden>
+      <div class="editor-heading"><div><div class="section-kicker">MANUAL EDITOR</div><h2>Manage your structure</h2><p>Changes are saved centrally, so authorised managers see the same hierarchy.</p></div><button class="button button-quiet" id="closeEditor">Close editor</button></div>
+      <div class="editor-grid">
+        <form id="positionForm" class="editor-card">
+          <h3 id="formHeading">Add a position</h3>
+          <label>Position / role title<input id="roleTitle" maxlength="60" placeholder="e.g. Community Director" required></label>
+          <label>Name <span class="optional">(optional)</span><input id="personName" maxlength="60" placeholder="Enter the person's name"></label>
+          <label>Reports to<select id="parentSelect"><option value="">Top level</option></select></label>
+          <div class="form-actions"><button class="button button-primary" type="submit" id="savePosition">Add position</button><button class="button button-quiet" type="button" id="cancelEdit" hidden>Cancel</button></div>
+          <p class="hint">Select a position in the chart to edit it. You can also add roles beneath any existing position.</p>
+        </form>
+        <div class="editor-card tools-card">
+          <h3>Save and move your chart</h3>
+          <p>Keep a backup or move your structure to another browser.</p>
+          <div class="tool-buttons"><button class="button button-primary" id="exportBtn">Export chart data</button><label class="button button-quiet file-button">Import chart data<input type="file" id="importFile" accept="application/json,.json"></label></div>
+          <button class="text-button danger-text" id="resetBtn">Reset to original KNG structure</button>
+          <p class="hint">Edits are saved on the server and shared with everyone viewing this hierarchy. Export a backup before major changes.</p>
+        </div>
+      </div>
+      <div class="selected-note" id="selectedNote">Select a chart position to edit its title, name or reporting line.</div>
+    </section>
+
+    <footer class="site-footer"><span>© KNG ESTATE</span><span>BUILT FOR THE COMMUNITY.</span></footer>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
