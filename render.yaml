@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: kng-staff-portal
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start

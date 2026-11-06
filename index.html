@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090909"><title>KNG Estate | Staff Portal</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="hamburger" id="menuToggle" aria-label="Open navigation" aria-expanded="false"><span></span><span></span><span></span></button>
+  <a class="brand" href="#" id="homeLink"><span class="brand-mark">K</span><span class="brand-copy"><strong>KNG <i>ESTATE</i></strong><small>STAFF MANAGEMENT</small></span></a>
+  <div class="top-actions"><span class="live"><i></i> STAFF PORTAL</span><div id="userArea"></div></div>
+</header>
+<div class="scrim" id="scrim"></div>
+<aside class="sidebar" id="sidebar" aria-label="Main navigation">
+  <div class="side-top"><span class="side-label">WORKSPACE</span><button id="closeMenu" class="close-menu" aria-label="Close navigation">×</button></div>
+  <nav id="mainNav">
+    <button class="nav-item active" data-page="home"><span class="nav-icon">⌂</span>Overview</button>
+    <div class="nav-label">TEAM ROSTERS</div>
+    <button class="nav-item" data-team="gangs"><span class="nav-icon">♟</span>Gangs</button>
+    <button class="nav-item" data-team="legal"><span class="nav-icon">⚖</span>Legal</button>
+    <button class="nav-item" data-team="actions"><span class="nav-icon">✦</span>Actions</button>
+    <button class="nav-item" data-team="interactions"><span class="nav-icon">↔</span>Interactions</button>
+    <button class="nav-item" data-team="calls"><span class="nav-icon">☎</span>Calls</button>
+    <button class="nav-item" data-team="order"><span class="nav-icon">◈</span>Order</button>
+    <button class="nav-item" data-team="knowledge"><span class="nav-icon">▤</span>Knowledge</button>
+    <button class="nav-item" data-team="discord"><span class="nav-icon">◉</span>Discord</button>
+    <button class="nav-item" data-team="tickets"><span class="nav-icon">▣</span>Tickets</button>
+    <button class="nav-item" data-team="wallstreet"><span class="nav-icon">＄</span>WallStreet</button>
+    <div id="managementNav" hidden><div class="nav-label">MANAGEMENT</div>
+      <button class="nav-item" data-page="management"><span class="nav-icon">⚙</span>Staff & Permissions</button>
+      <button class="nav-item" data-page="organisation"><span class="nav-icon">⌘</span>Organisation Chart</button>
+    </div>
+  </nav>
+  <div class="sidebar-foot"><span class="status-dot"></span> KNG ESTATE INTERNAL</div>
+</aside>
+<main id="mainContent">
+  <section class="hero" id="hero"><div class="eyebrow"><span></span> KNG ESTATE STAFF MANAGEMENT</div><h1>ONE PORTAL. <em>EVERY TEAM.</em></h1><p>Manage team rosters, roles and staff access in one place.</p></section>
+  <section id="pageContent"><div class="loading"><span class="spinner"></span>Loading your workspace…</div></section>
+  <footer class="site-footer"><span>© KNG ESTATE</span><span>BUILT FOR THE COMMUNITY.</span></footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js"></script>
+</body></html>
