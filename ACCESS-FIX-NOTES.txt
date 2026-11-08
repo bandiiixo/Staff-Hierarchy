@@ -1,0 +1,8 @@
+ACCESS FIX ORDER
+
+1. Run KNG-ACCESS-CONSTRAINT-REPAIR.sql first.
+2. Wait for it to finish successfully. The final SELECT should show member/aux/adm/manager/director counts.
+3. Then run KNG-ACTIONS-WORKSPACE-PATCH.sql.
+4. Deploy the website files.
+
+Do not rerun the original giant migration.

@@ -1,0 +1,27 @@
+KNG ENTERTAINMENT - ACTIONS / INTERACTIONS ROSTER UPDATE
+
+Added without removing existing Entertainment features:
+
+1. APPROVAL -> ALLOCATION
+   - After an ADM/MANAGER/DIRECTOR approves a staff access request, the site immediately offers an Actions vs Interactions allocation choice.
+   - Staff can choose "Do this later" and allocate the person from Staff Roster afterwards.
+
+2. TWO SEPARATE ROSTERS
+   - INTERACTIONS is displayed first.
+   - ACTIONS is displayed underneath.
+   - Each roster shows its own allocated member count.
+
+3. EDIT / REMOVE
+   - Existing roster edit controls remain available.
+   - Removing a member makes them available again in the unallocated pool so they can be placed on the other team.
+   - Team and hierarchy can still be edited by ADM+.
+
+4. DISCORD EXPORT
+   - Each roster has its own "Copy Discord Roster" button.
+   - Output uses Discord mention syntax: <@DISCORDID>
+   - Output is grouped by hierarchy and ends with the actual allocated team total, e.g. "11 members total".
+
+5. EXISTING FEATURES PRESERVED
+   - This update is based on the current KNG Entertainment Dashboard Update pack and does not remove the existing schedule, event hosting/randomiser, claim/unclaim, prizes & commands, security, points, Hungry Pool/operations, public F3 calendar, dashboard, Hall of Fame, daily goals, event suggestions, or other integrated functionality.
+
+NO NEW SQL MIGRATION IS REQUIRED FOR THIS CHANGE because the existing entertainment_roster table already supports team allocation and hierarchy.

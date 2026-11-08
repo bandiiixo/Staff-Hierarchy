@@ -1,0 +1,33 @@
+KNG ENTERTAINMENT - FULL PRESERVED UPDATE
+
+This pack is based on the latest FULL Host Event / Claim / Display Name build.
+It preserves the existing features, including:
+- Host an Event randomiser
+- Planned/protected event slots
+- Club 77 + Vanilla manual-only events
+- Manual event editing after randomisation
+- Staff event Claim / Unclaim with one-hour cutoff
+- KNG display names for claims
+- Prize Win / Prize Commands system
+- Prize catalogue and command generation
+- Prize completion/done tracking
+- Staff Roster and display-name profile editing
+- Name Change / existing integrated operations functionality
+- Actions & Interactions
+- Security / timeout / kick-off tools
+- Access Requests and permissions
+- Hall of Fame, Daily Goals, Leaderboard and other existing modules
+
+NEW DASHBOARD CHANGES:
+1. Removed the standalone Points tab from the sidebar.
+2. Moved Points Leaderboard into Operations Dashboard.
+3. Moved Adjust Points into Operations Dashboard and kept it ADM+ only.
+4. Operations Dashboard now shows the next 8 upcoming events from the current browser time.
+5. The dashboard no longer starts the list at 01:00 when it is already 05:00.
+6. The rolling list carries into tomorrow/later dates when required.
+7. The full Schedule / Host an Event page is unchanged.
+
+DATABASE:
+No new SQL migration is required for the dashboard changes.
+The included SQL files are preserved from the working full pack for reference.
+Do not rerun migrations just for the dashboard changes.

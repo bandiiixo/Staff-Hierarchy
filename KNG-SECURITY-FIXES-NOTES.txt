@@ -1,0 +1,29 @@
+KNG SCHEDULE SECURITY + CALENDAR FIXES
+
+This package is based on the existing KNG Schedule / Event Ideas Forum + Team Roster build.
+
+FIXED:
+1. Kick-off actions have a 30 second cooldown.
+2. Event creation has a 30 second cooldown, including Host an Event planned/manual/random creation.
+3. Members cannot grant themselves access. Self-promotion is blocked in the UI and database layer.
+4. Access hierarchy is now:
+   Member -> AUX -> ADM -> Management -> Director
+5. Direct grants follow:
+   ADM can grant AUX.
+   Management (Manager / Culture Manager / Entertainment Resp) can grant ADM.
+   Director can grant any level, including another Director.
+6. Access Requests are a Director approval queue.
+7. Staff Roster management includes an Access & Team Directory for management/directors.
+8. ADM and below only see their own team roster. Management and Directors see both teams.
+9. Management appears at the top of both team rosters.
+10. Monthly calendar now shows visible F3 event cards instead of only a tiny count.
+11. Week/day calendar event blocks now size to their actual duration so 30-minute F3 events do not stack as full-hour blocks.
+12. Recurring event editing can shift the entire recurrence series when the date is corrected.
+13. Event Ideas Forum now shows the actual Supabase error if the table/policy is missing.
+14. SQL patch includes a safe Event Ideas Forum table/RLS repair.
+
+SUPABASE:
+Run ONLY:
+KNG-SECURITY-AND-DIRECTOR-PERMISSIONS-PATCH.sql
+
+Do not rerun the old full migration just to get these fixes.

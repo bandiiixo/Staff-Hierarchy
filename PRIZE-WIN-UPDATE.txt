@@ -1,0 +1,21 @@
+KNG ENTERTAINMENT - PRIZE WIN UPDATE
+
+Changes:
+- Prize Win form is now permanently on the Prizes & Commands page. No modal/button is needed.
+- In-game ID has its own box.
+- Prize Type is a dropdown with:
+  - Dirty Money: dinheirosujo / 500000
+  - Dollars: dollars / 500000
+  - Event VIP: vipevento1 / 1
+- Amount auto-fills from the selected prize type.
+- Reason has its own box.
+- Command is generated as:
+  !additem ID CODE AMOUNT REASON
+- Copy command button copies the generated command.
+- Recorded prize wins have a "Given in Discord" checkbox so staff can mark the prize as actually issued.
+- Given/un-given state is saved in Supabase.
+
+IMPORTANT:
+Run KNG-ENTERTAINMENT-COMPLETE-MIGRATION.sql in Supabase if you have not already run the latest migration. It adds the prize reason/given fields and seeds the three prize types.
+
+Do not delete the other app files. Replace the existing app.js, style.css and migration SQL with the versions in this folder.

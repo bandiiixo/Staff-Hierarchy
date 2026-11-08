@@ -1,0 +1,12 @@
+KNG Schedule workspace update
+
+1. Removed Actions > Users from the visible sidebar. Staff Roster remains the single roster/user management page.
+2. Added Culture Manager as a roster role at the same permission rank as Manager. Culture Manager has access to both Actions and Interactions.
+3. Directors can grant Culture Manager through Staff Roster.
+4. Added Culture Manager to roster/access synchronisation.
+5. Fixed desktop sidebar so it stays stationary while page content scrolls. The current access/name card remains stationary at the bottom.
+6. Added the Director / Actions / Interactions switcher to the shared interaction header so it remains visible across those tabs.
+7. Forced workspace shells to remain transparent so the KNG background image stays visible behind all pages.
+8. Bumped app.js cache version.
+
+SQL: run KNG-CULTURE-MANAGER-ROLE-PATCH.sql once before assigning the new Culture Manager role. No other SQL is required for the layout changes.

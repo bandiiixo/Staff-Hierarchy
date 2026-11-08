@@ -1,0 +1,20 @@
+KNG ROSTER & MANAGEMENT UPDATE
+
+Included in app.js:
+- Culture Manager and Entertainment Resp receive the Actions / Interactions workspace switcher. Director retains the Director workspace option; non-Director management roles do not.
+- AUX can promote Member / Sub-LD / LD roster entries to AUX, but cannot promote beyond AUX.
+- AUX can edit roster display names only. They cannot change roster allocation, role, strikes, mentor status, or access permissions.
+- Culture Manager / Entertainment Resp remain cross-team and can operate both team workspaces. Director-only navigation remains restricted.
+- Action Log staff selection is now a type-to-search field accepting a roster name or exact Discord ID.
+- Actions Tracker winner is now a type-to-search field accepting a name or Discord ID.
+- Hall of Fame accepts winner name and/or Discord ID, resolves the winner to a staff record, and stores staff ID / Discord ID linkage.
+- Roster rows show a Hall of Fame marker when an entry is linked to that staff record.
+- Modal backdrops and close controls warn before discarding unsaved form changes; successful form submissions are not blocked by the warning.
+
+DATABASE PATCH REQUIRED:
+Run KNG-HALL-OF-FAME-WINNER-LINK-PATCH.sql in Supabase before using Hall of Fame winner linking. It adds winner_staff_id and winner_discord_id to ix_hall_of_fame.
+
+IMPORTANT PERMISSIONS NOTE:
+The frontend now enforces the intended AUX and management UI limits. Supabase RPC / RLS policies remain the ultimate security boundary. If the existing update_entertainment_roster_member RPC only permits ADM+, AUX promotions will still be rejected by the database until its authorization check is updated to permit AUX changes only when the target's resulting hierarchy is AUX or lower. Do not weaken the RPC to allow arbitrary role changes.
+
+No email fields were added to the UI.

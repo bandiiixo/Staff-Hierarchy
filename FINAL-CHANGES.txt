@@ -1,0 +1,57 @@
+KNG ENTERTAINMENT - FINAL MASTER UPDATE
+
+This pack is based on the full KNG Entertainment master with the existing hosting, prizes/commands, display-name, unclaim, roster allocation, leaderboard, Hall of Fame, security, access, public view, and other integrated functionality preserved.
+
+NEW / CHANGED IN THIS PACK
+1. Sidebar order is now:
+   Schedule
+   Event Suggestions
+   Host an Event
+   Prizes & Commands
+   Hall of Fame
+   Personal Dashboard
+   Staff Roster
+   Command Dashboard
+   Actions & Interactions
+   Access Requests
+   Security
+
+2. Old Operations Dashboard / Points / Hungry / Reductions tabs are removed from the sidebar, not deleted from the underlying code/data. Hosting remains available through Host an Event. Points adjustment is available to ADM+ inside Actions & Interactions and Personal Dashboard.
+
+3. Personal Dashboard combines the Daily Goal with the useful Operations Dashboard information, without the Points, Hungry, or Reductions stats.
+
+4. Command Dashboard keeps the rolling upcoming-event list and Most Popular Events by recorded attendance.
+
+5. Leaderboard remains available from the Command Dashboard quick actions and is focused on Most Events Hosted, Most Points, and Most Activity.
+
+6. Public F3 Events view added as a header button. It is public-view friendly and shows today's public events, highlights the next event, and hides staff/private meetings.
+
+7. Monthly calendar remains intentionally uncluttered by hiding high-volume entertainment events. Meetings remain visible.
+
+8. KNG crown uses kngcroiwn.png throughout the app.
+
+9. Roster name editing now updates the linked staff record as well as the roster record, and the visible roster prefers the staff name so edits actually appear.
+
+10. ALOPA has been removed from the visible roster UI.
+
+11. Existing Actions / Interactions allocation and post-approval allocation flow is preserved.
+
+12. Existing Discord-ready roster export is preserved, including <@DISCORD_ID> formatting and separate Actions / Interactions outputs.
+
+13. Existing display-name claiming, host claim/unclaim (unclaim allowed more than one hour before start), event hosting, recurring events, prize wins/commands, security/crashout, access hierarchy, Hall of Fame, suggestions, and other integrated functionality are preserved.
+
+No database migration was changed for this UI/navigation update. The existing migration files are included unchanged for reference.
+
+VALIDATION
+- app.js passes node --check.
+
+
+TEAM WORKSPACE INTEGRATION
+==========================
+14. Added team-aware workspaces inside the existing red KNG Schedule.
+15. Shared staff tools: Schedule, Event Suggestions, Personal Dashboard, Staff Roster and Command Dashboard.
+16. Interactions workspace: Host an Event, Current Host, Prizes & Commands and Hall of Fame.
+17. Actions workspace: Actions Dashboard with event assignments, upcoming schedule and team shortcuts.
+18. Personal Dashboard now changes content and shortcuts according to the member's roster team.
+19. Staff roster is now readable by authenticated staff; ADM+ controls remain protected.
+20. Managers/directors can access both Actions and Interactions workspaces.

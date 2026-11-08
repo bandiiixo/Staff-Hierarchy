@@ -1,0 +1,20 @@
+KNG SCHEDULE - DIRECTOR WORKSPACE + EVENT APPROVAL FIX
+
+1. SQL FIX
+Run KNG-EVENT-APPROVAL-AMBIGUITY-FIX.sql in Supabase.
+This replaces approve_kng_event_submission() and fixes the PostgreSQL
+"column reference event_id is ambiguous" error by using v_event_id for the
+function variable and qualifying the submission table update.
+
+2. WEBSITE
+Deploy the full website package.
+Directors now get a workspace switcher with:
+- DIRECTOR: shared tools + management/access/security controls
+- ACTIONS: shared tools + the full Actions workspace
+- INTERACTIONS: shared tools + the full Interactions workspace
+
+The selected workspace is remembered in localStorage and switching workspace
+returns to the shared Schedule so the navigation cannot strand the user in an
+old team-specific view.
+
+No other SQL migration is required for the workspace switcher.

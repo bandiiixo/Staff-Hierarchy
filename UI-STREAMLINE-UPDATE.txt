@@ -1,0 +1,22 @@
+KNG SCHEDULE - UI STREAMLINE UPDATE
+
+Based on the 31 Oct 2026 walkthrough video.
+
+CHANGES
+- Actions sidebar reduced from 10 team-specific tabs to 4:
+  1. Actions Dashboard
+  2. Action Centre (submit + approval queue + upcoming schedule)
+  3. Action Records (Actions Tracker + Battle Royale)
+  4. Performance (Action Log + Stats + Leaderboard + Goals)
+- Action Users removed as a separate page because Staff Roster is the single roster source of truth.
+- Interactions sidebar reduced to 2 team-specific tabs:
+  1. Hosting (Current Host + Host an Event)
+  2. Recognition (Prizes & Commands + Hall of Fame)
+- Shared pages remain available to both teams: Schedule, Event Suggestions, Personal Dashboard, Staff Roster, Command Dashboard.
+- Director workspace switching remains DIRECTOR / ACTIONS / INTERACTIONS.
+- Fixed header/sidebar vertical offset: sidebar now starts below the 78px sticky header instead of 68px, preventing the top of long pages from sliding underneath the header.
+- Added compact internal sub-tabs for combined pages.
+- Action submission and Action Log forms are now bound correctly when rendered inside the combined workspace pages.
+- Action data is loaded when entering the new combined Actions pages.
+
+NO NEW SQL REQUIRED FOR THIS UI UPDATE.

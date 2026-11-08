@@ -1,0 +1,57 @@
+KNG SCHEDULE - ACTIONS WORKSPACE UPDATE
+
+What changed
+============
+1. Roster hierarchy now syncs to site access.
+   - Manager of Actions/Interactions -> Management site access
+   - ADM -> ADM site access
+   - AUX -> AUX site access
+   - LD/Sub-LD/Member -> Member site access
+   - Director -> Director site access
+   This is enforced by a Supabase trigger and an existing-roster backfill.
+
+2. Event submissions
+   - Every confirmed staff level (Member, LD, Sub-LD, AUX, ADM, Management, Director) can submit an event.
+   - Only AUX+ can approve or reject.
+   - Approval creates a real event on the shared KNG Schedule.
+   - Action submissions can be approved into the Actions workspace.
+
+3. Actions workspace
+   Added a dedicated Actions section matching the supplied video:
+   - Actions Dashboard
+   - Host an Action
+   - Action Schedule
+   - Actions Tracker
+   - Battle Royale Tracker
+   - Action Log
+   - Action Stats
+   - Leaderboard
+   - Action Goals
+   - Users
+
+4. Actions Tracker
+   Includes date, action type, status, org 1, org 2, attendance, winner, org counts, IDs and winner-comped status.
+
+5. BR Tracker
+   Includes date, BR type, status, attendance, first place and winner-comped status.
+
+6. Action Log
+   Includes organisation, action, positive/negative result, numbers/why and proof URL.
+
+7. Stats / leaderboard / goals
+   Added monthly stats, win-rate calculations, most-played action types, attendance leaderboard and monthly action targets.
+
+Database patches to run
+=======================
+Run these in Supabase SQL Editor, in this order:
+
+1. KNG-ROLE-ACCESS-PATCH.sql
+2. KNG-ACTIONS-WORKSPACE-PATCH.sql
+
+Do NOT rerun the old giant migration just for these changes.
+
+After SQL
+=========
+Deploy the project files, then hard refresh the site with Ctrl+Shift+R.
+
+The Action workspace is backed by the new kng_action_* tables and the shared events table. If the Actions SQL has not been run yet, the rest of the KNG Schedule remains usable and the new Actions pages will show a database setup notice rather than crashing the whole app.

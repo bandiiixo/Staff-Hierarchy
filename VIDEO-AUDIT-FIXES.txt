@@ -1,0 +1,55 @@
+KNG ENTERTAINMENT - VIDEO AUDIT + FULL PRESERVATION FIX
+
+This pack is based on KNG-Entertainment-FINAL-MASTER-ALL-UPDATES.
+It is NOT a stripped replacement. Existing hosting, randomisation, recurring events,
+planned/protected slots, event claiming/unclaiming, display names, prizes & commands,
+Hall of Fame, security/crashout, Discord access hierarchy, roster allocation,
+post-approval allocation, roster editing, Discord roster exports, Public F3,
+Command Dashboard, Leaderboard and other integrated functionality are preserved.
+
+FIXES FROM THE VIDEO AUDIT
+1. Removed the literal "undefined" bug from the Public F3 screen. The F3 renderer
+   was returning undefined into the page because it both rendered the app and was
+   interpolated as a child view.
+2. Public F3 now renders as a real child view and displays today's public events.
+   Passed events are dimmed, the next event is highlighted, and the claimed host
+   name is shown when available.
+3. Existing Host-an-Event slots created by the randomiser/planner/manual tools are
+   normalised to public visibility by the SQL migration unless they are meetings.
+4. Monthly calendar stays clean. High-volume F3/Host-an-Event slots are not drawn
+   as dozens of individual boxes. Meetings remain visible and busy days show a
+   compact "X F3 events" count that opens the day view.
+5. Command Dashboard keeps the rolling upcoming-event list instead of showing a
+   wall of already-passed times, and keeps Most Popular Events by attendance.
+6. Leaderboard remains focused on Most Events Hosted, Most Points and Most Activity.
+7. Personal Dashboard no longer contains Points, Hungry Pool or Reductions. It
+   contains Daily Goal plus useful operational information: upcoming events,
+   completed events, staff count, suggestions and most popular events.
+8. Actions & Interactions now has a shortcut into the Actions/Interactions rosters.
+9. Host claim display-name rendering has a defensive staff-name fallback, so a
+   missing/stale stored host name no longer falls back to generic "Staff" when a
+   Discord-linked staff record is available.
+10. Roster remains Interactions first, Actions second, with separate Discord-copy
+    buttons and <@DISCORD_ID> output. ALOPA remains removed from the visible roster.
+11. The exact requested sidebar order remains:
+    Schedule
+    Event Suggestions
+    Host an Event
+    Prizes & Commands
+    Hall of Fame
+    Personal Dashboard
+    Staff Roster
+    Command Dashboard
+    Actions & Interactions
+    Access Requests
+    Security
+
+DATABASE NOTE
+The included KNG-ENTERTAINMENT-MASTER-COMPLETE.sql intentionally does NOT create
+or load the retired Hungry Pool / Reductions operations tables. Existing old tables
+in Supabase are left untouched. The frontend no longer queries them during normal
+operation.
+
+VALIDATION
+- app.js passes node --check.
+- SQL dollar-quote delimiter count is balanced.

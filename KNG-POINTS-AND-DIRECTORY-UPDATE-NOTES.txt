@@ -1,0 +1,15 @@
+KNG Schedule update: collapsible Access & Team Directory + team points leaderboards
+
+Changes:
+- Access & Team Directory is now a collapsed-by-default native dropdown on the Staff Roster page.
+- Added explicit Actions and Interactions team attribution to point adjustments.
+- Existing ops_points entries are backfilled to the roster team where possible; unmatched legacy entries are retained under Interactions.
+- Actions Leaderboard now includes an Actions points leaderboard.
+- Interactions Leaderboard now totals the actual ops_points.amount field (previously it incorrectly read a non-existent points field) and only includes Interactions points.
+- Points remain an adjustment ledger: positive values award points and negative values remove points, with the existing +/-25 adjustment limit and management-only write permission.
+
+Supabase:
+Run KNG-TEAM-POINTS-SYSTEM-PATCH.sql once in the Supabase SQL Editor.
+The patch is safe to rerun. It adds team attribution, backfills existing records, and lets authenticated staff read only their team's leaderboard. Existing management permission controls who can award/remove points.
+
+Deploy this package over the existing KNG Schedule deployment. No original full migration should be rerun.

@@ -1,0 +1,13 @@
+KNG Schedule Cleanup Pass
+
+Changes in this build:
+- Standardised operations/interactions page headers so the Director workspace switcher is present consistently.
+- Standardised header controls: workspace switcher, staff/access state, Create Event, Meeting (where permitted), Public F3, Logout/Login, and Today.
+- Removed the Actions Users destination from the visible navigation. Staff Roster remains the single staff-management surface.
+- Kept Culture Manager support from the previous build.
+- Kept the fixed desktop sidebar and stationary Current Access card.
+- Kept the KNG background fixed behind workspace pages.
+- Redesigned desktop Month calendar sizing so the entire month grid fits the viewport without an internal/page calendar scroll. Cells compress vertically and event details remain compact.
+- Bumped app.js cache version.
+
+No SQL changes are required for this cleanup pass.

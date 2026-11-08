@@ -1,0 +1,33 @@
+KNG SCHEDULE - REGRESSION REPAIR
+
+This package is based on the complete website archive supplied on 5 November 2026.
+It preserves the existing website structure and features rather than replacing the app.
+
+FIXES INCLUDED
+- Restored Command Dashboard access in both Actions and Interactions workspaces for management.
+- Restored a direct Helpers navigation item for management so helper assignments are reachable.
+- Kept Prizes & Commands in the shared navigation for both team workspaces.
+- Kept Hall of Fame photo upload, removal and save controls available to ADM and above, including Culture Manager and Entertainment Resp.
+- Made the Personal Dashboard use the selected Actions / Interactions workspace for cross-team managers.
+- Refreshes events when opening staff dashboards, so completed events are not hidden by stale page data.
+- Treats event status case-insensitively and recognises completed_at as a completion marker.
+- Added session-level form draft recovery for modal forms, excluding password and file inputs; accepted close / successful submit clears the draft.
+- AUX promotions now advance one level at a time and stop at AUX.
+- AUX can edit display names only; other roster fields remain protected.
+- Culture Manager and Entertainment Resp can manage both teams and assign staff roles up to ADM, but cannot alter peer management roles or Director accounts.
+- Director-only access controls remain Director-only.
+
+DATABASE PATCHES
+1. Run KNG-ROSTER-PERMISSION-HARDENING-PATCH.sql in Supabase.
+   This updates the roster RPC security boundary to match the AUX and management rules.
+2. Run KNG-HALL-OF-FAME-WINNER-LINK-PATCH.sql if it has not already been run.
+   It adds the winner staff ID and Discord ID links used by Hall of Fame submissions.
+
+Do not rerun the large complete migration just for these fixes. The two small patches above are the intended database changes.
+
+VALIDATION PERFORMED
+- app.js passes Node.js syntax validation.
+- The package retains the complete original site assets, CSS, HTML, Supabase client and existing SQL files.
+- Key navigation, event completion, helper, Hall of Fame and dashboard handlers remain present.
+
+A live Supabase login / RLS test cannot be performed from this offline package build. If a database policy rejects a specific operation, the error will be surfaced by the website; it should not be worked around by weakening RLS.

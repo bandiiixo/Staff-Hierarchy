@@ -1,0 +1,13 @@
+KNG Entertainment update
+
+1. Command Dashboard now includes Most Popular Events (attendance).
+2. Leaderboard now focuses on staff performance:
+   - Most Events Hosted
+   - Most Points
+   - Most Activity
+3. Roster editing now stores the chosen roster display name directly on entertainment_roster.
+   This means editing a roster person's name changes the name shown on the actual roster.
+4. ALOPA has been removed from the visible roster UI and edit form.
+5. Existing roster names are backfilled from staff.name by the accompanying SQL patch.
+
+Run KNG-ROSTER-NAME-LEADERBOARD-FIX.sql once in Supabase after the existing migration.

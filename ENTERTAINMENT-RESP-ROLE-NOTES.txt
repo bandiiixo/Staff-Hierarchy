@@ -1,0 +1,22 @@
+ENTERTAINMENT RESP ROLE
+
+Hierarchy:
+Director
+Manager
+Culture Manager
+Entertainment Resp
+ADM
+AUX
+LD
+Sub-LD
+Member
+
+Entertainment Resp is below Manager/Culture Manager in roster hierarchy but has management-tier site permissions:
+- Access to both Actions and Interactions
+- Management-level dashboard/workspace permissions
+- Can approve events (AUX+ rule)
+- Can manage roster/access below its own level
+- Cannot assign Manager, Culture Manager, or Director
+
+Run once on the existing database:
+KNG-ENTERTAINMENT-RESP-ROLE-PATCH.sql

@@ -1,0 +1,19 @@
+KNG SCHEDULE RED-SCREEN FIX
+============================
+
+Website changes:
+- Added an immediate loading screen so the app never sits as a naked red/black background while Supabase initialises.
+- Wrapped the main render path so a client-side render error is shown on-screen instead of leaving a blank page.
+- Added global browser error/unhandled-rejection reporting for startup failures.
+- Made event type and staff loading non-fatal.
+- Made event loading fall back to a plain events query if a nested PostgREST relationship fails.
+- Kept the existing KNG Schedule layout, Supabase architecture, red styling and team workspace behaviour.
+
+DATABASE:
+- DO NOT rerun the old migration that stopped at: policy "events_staff_update" already exists.
+- Use KNG-ENTERTAINMENT-SAFE-RERUN.sql for the existing KNG database.
+- It is the same final migration with DROP POLICY IF EXISTS guards before policy creation, so existing policies do not stop execution.
+- If the database already has the base KNG Schedule schema, this is the migration to use for the current site.
+
+TEAM PATCH:
+- KNG-TEAM-WORKSPACE-PATCH.sql is still included for the small roster-read-only change, but the safe rerun already contains the roster policy.

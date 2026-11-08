@@ -1,0 +1,12 @@
+HALL OF FAME MEMBER ACCESS UPDATE
+
+What changed:
+- Active KNG Members and above can now open Hall of Fame from the shared sidebar, regardless of whether their assigned team is Actions or Interactions.
+- Members can create a Hall of Fame entry, enter the winner's name or Discord ID, upload the winner photo, adjust the frame/photo position/colour, and submit the entry.
+- The entry stores the winner's linked staff record ID and Discord ID when matched.
+- Removing a photo from an existing Hall of Fame entry remains management-only.
+- Public/unauthenticated users cannot submit entries.
+
+Database:
+Run KNG-HALL-OF-FAME-MEMBER-SUBMISSION-PATCH.sql in Supabase SQL Editor.
+This patch includes the winner identity columns/indexes, member insert policy, and storage upload policy. It keeps update/delete permissions restricted to ADM and management roles.

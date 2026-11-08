@@ -1,0 +1,19 @@
+KNG ENTERTAINMENT FINAL SQL
+
+Run this one file in Supabase SQL Editor:
+KNG-ENTERTAINMENT-MASTER-COMPLETE.sql
+
+It combines:
+- KNG Entertainment complete migration
+- Discord-only permissions hierarchy
+- Events, recurring events and meetings
+- Event claiming + unclaim window
+- Saved KNG display names for event claims
+- Existing claim repair from Discord ID to name
+- Actions & Interactions roster
+- Roster display-name editing
+- Leaderboard/Hall of Fame/Daily Goals/operations data
+- Existing operations tables including points, hungry, reductions, security, prizes, commands, access requests, feedback and suggestions
+- RLS policies and storage setup
+
+The separate SQL patch files are retained as reference only. Do not run them after the master file unless specifically instructed.

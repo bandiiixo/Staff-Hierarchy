@@ -1,0 +1,11 @@
+KNG PRIVACY UPDATE
+
+- Removed the Audit Log page content from the website.
+- Disabled client-side writes to ops_audit.
+- Removed audit records from the Security page.
+- Security event history now shows event type, generic actor label, severity and timestamp only; raw details are not rendered.
+- Staff/access request cards use display name, Discord username or Discord ID only. Email is not used as a visible fallback or secondary label.
+- Active timeout and blocked-account lists use generic account labels and do not display email addresses.
+- Current profile display-name fallback no longer uses the authenticated email address.
+
+Security operations still use email internally for the existing timeout/block backend tables. Those values are not rendered in the website's account lists. Existing records in Supabase are not deleted by this frontend update.
