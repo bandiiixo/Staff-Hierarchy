@@ -362,16 +362,6 @@ function canManage() {
     return hasPermission("adm");
 }
 
-function canSubmitHallOfFame() {
-    // Active KNG Members and above may submit a Hall of Fame entry.
-    return Boolean(currentUser) && permissionRank() >= 1;
-}
-
-function canManageHallOfFame() {
-    // Removing an existing photo remains a management-only action.
-    return canManage() || isDirector();
-}
-
 function canEntertainment() {
     return hasPermission("adm");
 }
@@ -420,6 +410,7 @@ function isTeamSpecificView(view) {
     return {
         "host-event": "interactions",
         "current-host": "interactions",
+        "hall-of-fame": "interactions",
         "interactions-leaderboard": "interactions",
         "actions-dashboard": "actions",
         "action-schedule": "actions",
@@ -452,12 +443,6 @@ function currentWorkspaceView() {
     if (isDirector() && !['director','actions','interactions'].includes(directorWorkspace)) return 'director';
     if (!isDirector() && !['actions','interactions'].includes(directorWorkspace)) return 'actions';
     return directorWorkspace;
-}
-
-function getActiveWorkspaceTeam() {
-    const workspace = currentWorkspaceView();
-    if (['actions', 'interactions'].includes(workspace)) return workspace;
-    return getCurrentEntertainmentTeam();
 }
 
 function canApproveAccess() {
@@ -2416,41 +2401,7 @@ function showModal(content) {
 
     document.body.classList.add("modal-open");
     const modal = container.querySelector(".modal");
-    if (modal) {
-        const forms = [...modal.querySelectorAll("form")];
-        forms.forEach(form => {
-            const key = form.id ? `kng.modal.draft.${form.id}` : null;
-            if (key) {
-                try {
-                    const saved = JSON.parse(sessionStorage.getItem(key) || "null");
-                    if (saved && typeof saved === "object") {
-                        [...form.elements].forEach(el => {
-                            if (!el.name || el.type === "file" || el.type === "password") return;
-                            if (!(el.name in saved)) return;
-                            if (el.type === "checkbox" || el.type === "radio") el.checked = Boolean(saved[el.name]);
-                            else if (el.type !== "submit" && el.type !== "button") el.value = saved[el.name];
-                        });
-                        modal.dataset.dirty = "1";
-                    }
-                } catch (_) {}
-                const persist = () => {
-                    const draft = {};
-                    [...form.elements].forEach(el => {
-                        if (!el.name || el.type === "file" || el.type === "password" || el.type === "submit" || el.type === "button") return;
-                        draft[el.name] = (el.type === "checkbox" || el.type === "radio") ? el.checked : el.value;
-                    });
-                    try { sessionStorage.setItem(key, JSON.stringify(draft)); } catch (_) {}
-                };
-                form.addEventListener("input", persist, true);
-                form.addEventListener("change", persist, true);
-                form.addEventListener("submit", () => { modal.dataset.submitting = "1"; }, true);
-                form.dataset.draftKey = key;
-            }
-        });
-        modal.addEventListener("input", () => { modal.dataset.dirty = "1"; }, true);
-        modal.addEventListener("change", () => { modal.dataset.dirty = "1"; }, true);
-        modal.addEventListener("submit", () => { modal.dataset.submitting = "1"; }, true);
-    }
+    if (modal) { modal.addEventListener("input", () => { modal.dataset.dirty = "1"; }, true); modal.addEventListener("change", () => { modal.dataset.dirty = "1"; }, true); modal.addEventListener("submit", () => { modal.dataset.submitting = "1"; }, true); }
 }
 
 
@@ -2476,11 +2427,6 @@ function closeModal(force = false) {
     if (container) {
         const modal = container.querySelector(".modal");
         if (!force && modal?.dataset.dirty === "1" && modal?.dataset.submitting !== "1" && !confirm("You have unsaved changes. Close this form and lose them?")) return;
-        if (modal) {
-            modal.querySelectorAll("form[data-draft-key]").forEach(form => {
-                try { sessionStorage.removeItem(form.dataset.draftKey); } catch (_) {}
-            });
-        }
         container.innerHTML = "";
     }
 
@@ -2814,7 +2760,8 @@ function operationsNavHtml() {
     const interactionItems = [
         ["host-event", "🎲", "Host an Event"],
         ["current-host", "🎤", "Current Host"],
-        ["interactions-leaderboard", "♛", "Leaderboard"]
+        ["interactions-leaderboard", "♛", "Leaderboard"],
+        ["hall-of-fame", "▣", "Hall of Fame"]
     ];
     const actionItems = [
         ["actions-dashboard", "⚡", "Actions Dashboard"],
@@ -2828,7 +2775,6 @@ function operationsNavHtml() {
     const sharedItems = [
         ["schedule", "▦", "Schedule"],
         ["event-suggestions", "✦", "Event Suggestions"],
-        ["hall-of-fame", "▣", "Hall of Fame"],
         ["personal-dashboard", "◎", "Personal Dashboard"],
         ["staff-roster", "♙", "Staff Roster"],
         ["prizes", "◇", "Prizes & Commands"],
@@ -2844,14 +2790,7 @@ function operationsNavHtml() {
     const isDirectorUser = isDirector();
     const isWorkspaceManager = canSwitchTeamWorkspace();
     const directorView = isWorkspaceManager ? currentWorkspaceView() : null;
-    // Shared staff tools remain visible while a cross-team manager is in either workspace.
-    // The command dashboard contains helper assignment and operational controls; hiding it
-    // from the team switcher made those existing features appear to have vanished.
-    const baseShared = [
-        sharedItems[0], sharedItems[1],
-        ...(permissionRank() >= 1 ? [...sharedItems.slice(2,6)] : []),
-        ...(canManage() ? [sharedItems[6], ["helpers", "＋", "Helpers"]] : [])
-    ];
+    const baseShared = [sharedItems[0], sharedItems[1], ...(permissionRank() >= 1 ? [...sharedItems.slice(2,4), sharedItems[4]] : [])];
     let items;
     if (isWorkspaceManager) {
         if (directorView === "actions") {
@@ -2930,7 +2869,7 @@ async function switchOpsView(view) {
         showLoginMessage();
         return;
     }
-    if ((view === "staff-roster" || view === "hall-of-fame") && permissionRank() < 1) {
+    if (view === "staff-roster" && permissionRank() < 1) {
         showLoginMessage();
         return;
     }
@@ -2942,7 +2881,8 @@ async function switchOpsView(view) {
         ixView = view;
         opsView = "schedule";
         try { localStorage.setItem("kng.ixView", view); localStorage.setItem("kng.opsView", "schedule"); } catch (_) {}
-        await Promise.all([loadInteractionData(), loadRosterData(), loadEvents()]);
+        await loadInteractionData();
+        await loadRosterData();
         render();
         return;
     }
@@ -3168,6 +3108,52 @@ function renderAccessRequestsView() {
         ${pending.length ? pending.map(requestCard).join("") : `<div class="ops-card"><h3>No pending requests</h3><p class="ops-muted">There are currently no staff access requests waiting for approval.</p></div>`}
         ${processed.length ? `<details class="ops-card"><summary>Processed requests (${processed.length})</summary><div class="access-history-list">${processed.slice(0, 100).map(requestCard).join("")}</div></details>` : ""}
     </div>`;
+}
+
+
+function renderOpsHelpers() {
+    const helpers = Array.isArray(ops.helpers) ? ops.helpers : [];
+    const eventOptions = (events || [])
+        .filter(e => e && e.id && e.status !== "cancelled")
+        .sort((a,b) => String(b.event_date || "").localeCompare(String(a.event_date || "")))
+        .map(e => `<option value="${escapeAttribute(e.id)}">${escapeHtml(e.title || "Untitled event")} · ${escapeHtml(e.event_date || "Date TBC")} ${escapeHtml(String(e.start_time || "").slice(0,5))}</option>`)
+        .join("");
+    const staffOptions = (staff || [])
+        .filter(s => s && s.id)
+        .slice()
+        .sort((a,b) => String(a.name || "").localeCompare(String(b.name || "")))
+        .map(s => `<option value="${escapeAttribute(s.id)}">${escapeHtml(s.name || "Unnamed staff member")}${s.discord_id ? ` · ${escapeHtml(s.discord_id)}` : ""}</option>`)
+        .join("");
+    const rows = helpers.map(h => {
+        const event = h.events || (events || []).find(e => String(e.id) === String(h.event_id));
+        const member = h.staff || (staff || []).find(s => String(s.id) === String(h.staff_id));
+        return `<tr>
+            <td><strong>${escapeHtml(event?.title || "Event unavailable")}</strong><small>${escapeHtml(event?.event_date || "")} ${escapeHtml(String(event?.start_time || "").slice(0,5))}</small></td>
+            <td>${escapeHtml(member?.name || "Staff member unavailable")}</td>
+            <td>${escapeHtml(h.note || "")}</td>
+            <td>${formatOpsDateTime(h.created_at)}</td>
+            ${canManage() ? `<td><button type="button" class="secondary-button helper-remove" data-id="${escapeAttribute(h.id)}">Remove</button></td>` : ""}
+        </tr>`;
+    }).join("");
+    return `${opsErrorNotice("helpers")}
+        ${canManage() ? opsCard("Assign event helpers", `<form id="helperForm" class="ops-form helper-assignment-form">
+            <label>Event<select name="event_id" required><option value="">Choose an event</option>${eventOptions}</select></label>
+            <label>Helper<select name="staff_id" required><option value="">Choose a staff member</option>${staffOptions}</select></label>
+            <label>Notes (optional)<input name="note" maxlength="300" placeholder="What are they helping with?"></label>
+            <button class="primary-button" type="submit">Assign helper</button>
+            <small>Helpers are attached to the selected event and appear in its helper list.</small>
+        </form>`) : ""}
+        ${opsCard("Assigned helpers", helpers.length ? `<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Event</th><th>Helper</th><th>Notes</th><th>Assigned</th>${canManage() ? "<th></th>" : ""}</tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="ops-empty">No helpers have been assigned yet.</div>`)}
+    `;
+}
+
+async function removeOpsHelper(id) {
+    if (!canManage() || !id) return;
+    if (!confirm("Remove this helper assignment?")) return;
+    const { error } = await supabaseClient.from("ops_helpers").delete().eq("id", id);
+    if (error) return alert(error.message);
+    await loadOpsData();
+    render();
 }
 
 function renderOpsViewHtml() {
@@ -3502,6 +3488,7 @@ function bindOpsHandlers() {
     document.getElementById("prizeForm")?.addEventListener("submit", submitPrize);
     bindPrizePageHandlers();
     document.getElementById("helperForm")?.addEventListener("submit", submitHelper);
+    document.querySelectorAll(".helper-remove").forEach(btn => btn.addEventListener("click", () => removeOpsHelper(btn.dataset.id)));
     document.getElementById("timeoutForm")?.addEventListener("submit", submitTimeout);
     document.getElementById("blockForm")?.addEventListener("submit", submitBlock);
     document.getElementById("crashoutSettingsForm")?.addEventListener("submit", submitCrashoutSettings);
@@ -3550,8 +3537,25 @@ async function submitPrize(e) {
 }
 
 async function submitHelper(e) {
-    e.preventDefault(); if(!canManage()) return; const payload=Object.fromEntries(new FormData(e.target).entries()); payload.created_by=currentUser.id;
-    const {error}=await supabaseClient.from("ops_helpers").insert(payload); if(error) return alert(error.message); await writeAudit("helper.assigned",payload); await loadOpsData(); render();
+    e.preventDefault();
+    if (!canManage()) return;
+    const form = e.target;
+    const data = Object.fromEntries(new FormData(form).entries());
+    const payload = {
+        event_id: String(data.event_id || "").trim(),
+        staff_id: String(data.staff_id || "").trim(),
+        note: String(data.note || "").trim() || null,
+        created_by: currentUser.id
+    };
+    if (!payload.event_id || !payload.staff_id) return alert("Choose both an event and a staff member.");
+    const { error } = await supabaseClient.from("ops_helpers").insert(payload);
+    if (error) {
+        if (String(error.code || "") === "23505") return alert("That staff member is already assigned as a helper for this event.");
+        return alert(error.message);
+    }
+    await writeAudit("helper.assigned", payload);
+    await loadOpsData();
+    render();
 }
 
 async function submitTimeout(e) {
@@ -3704,7 +3708,7 @@ function buildRecurringDates(startDate, repeat, untilDate) {
 }
 
 function isEventCompleted(event) {
-    return String(event?.status || '').toLowerCase() === "completed" || Boolean(event?.completed_at);
+    return event.status === "completed";
 }
 
 function applyEventPreset(preset) {
@@ -3799,7 +3803,7 @@ function renderPublicF3Calendar() {
 
 function renderInteractionView() {
     const publicViews = ["event-suggestions", "public-f3"];
-    const staffOnlyViews = ["command-dashboard", "personal-dashboard", "staff-roster", "current-host", "actions-dashboard", "hall-of-fame"];
+    const staffOnlyViews = ["command-dashboard", "personal-dashboard", "staff-roster", "current-host", "actions-dashboard"];
     const team = isTeamSpecificView(ixView);
     if (team && !canUseTeam(team)) {
         ixView = "personal-dashboard";
@@ -3814,7 +3818,7 @@ function renderInteractionView() {
         "command-dashboard":["Command Dashboard","Shared KNG command centre"],
         "interactions-leaderboard":["Leaderboard","Interactions hosting and staff activity"],
         "hall-of-fame":["Hall of Fame","Winner frames and event recognition"],
-        "personal-dashboard":["Personal Dashboard",`${String(getActiveWorkspaceTeam() || "KNG").toUpperCase()} staff workspace`],
+        "personal-dashboard":["Personal Dashboard",`${String(getCurrentEntertainmentTeam() || "KNG").toUpperCase()} staff workspace`],
         "public-f3":["Public F3 Events","Today’s public entertainment schedule"],
         "staff-roster":["Staff Roster","Current KNG Entertainment staff"],
         "event-suggestions":["Event Ideas Forum","Community ideas for future KNG events"],
@@ -3984,7 +3988,7 @@ function renderHallOfFame(){
           <div class="ix-panel-head"><div><h3>Hall of Fame</h3><small>Build the winner card exactly like the KNG frame.</small></div></div>
           <div class="hof-control-section"><b>Frame Library</b><div class="ix-frame-grid hof-frame-grid">${frames.map(f=>`<button class="ix-frame-chip hof-frame-chip ${selected===f.key?'active':''}" data-hof-frame="${f.key}" onclick="selectHofFrame('${f.key}')">${escapeHtml(f.name)}</button>`).join('')}</div></div>
           <label>Winner name<input id="hofWinnerName" list="hofStaffNames" value="${escapeHtml(current.winner_name||'')}" placeholder="Type winner name"><datalist id="hofStaffNames">${(staff||[]).map(x=>`<option value="${escapeAttribute(x.name||'')}"></option>`).join('')}</datalist></label><label>Winner Discord ID<input id="hofWinnerDiscordId" value="${escapeAttribute(current.winner_discord_id||'')}" placeholder="Enter Discord ID instead (optional)"></label>
-          <div class="hof-photo-actions">${canSubmitHallOfFame()?`<button class="header-button" onclick="openHofUpload()">Add winner photo</button>`:''}${canManageHallOfFame()?`<button class="header-button danger-button" onclick="removeHofPhoto()">Remove photo</button>`:''}<button class="header-button" onclick="resetHofPhoto()">Reset photo position</button></div>
+          <div class="hof-photo-actions">${canManage()?`<button class="header-button" onclick="openHofUpload()">Add winner photo</button><button class="header-button danger-button" onclick="removeHofPhoto()">Remove photo</button>`:''}<button class="header-button" onclick="resetHofPhoto()">Reset photo position</button></div>
           <div class="hof-colour-panel" id="hofCustomControls">
             <div class="hof-colour-top"><div class="hof-colour-swatch" id="hofColourSwatch" style="background:${escapeAttribute(colour)}" onclick="document.getElementById('hofColour')?.click()"></div><input id="hofHex" class="hof-hex-input" value="${escapeAttribute(colour.toUpperCase())}" maxlength="7" aria-label="Hex colour" oninput="applyHofHex(this.value)"><span id="hofRgb" class="hof-rgb">${escapeHtml(hofRgbLabel(colour))}</span></div>
             <label class="hof-range-label"><span>Hue</span><input id="hofHue" type="range" min="0" max="359" value="${hofHueFromHex(colour)}" oninput="applyHofHue(this.value)"><small id="hofHueValue">${hofHueFromHex(colour)}°</small></label>
@@ -3993,7 +3997,7 @@ function renderHallOfFame(){
             <input id="hofColour" type="color" value="${escapeAttribute(colour)}" oninput="applyHofCustomColour(this.value)" style="position:absolute;left:-9999px;opacity:0;pointer-events:none">
           </div>
           <div class="hof-help">Drag the winner photo inside the black box. Scroll to zoom.</div>
-          <div class="hof-action-row">${canSubmitHallOfFame()?`<button class="primary-button" onclick="saveHallOfFame()">Submit Hall of Fame Entry</button>`:""}<button class="header-button" onclick="downloadHallOfFame()">Download</button></div>
+          <div class="hof-action-row">${canManage()?`<button class="primary-button" onclick="saveHallOfFame()">Save Winner</button>`:""}<button class="header-button" onclick="downloadHallOfFame()">Download</button></div>
         </div>
       </div>
     </div>`;
@@ -4078,7 +4082,7 @@ function resetHofPhoto(){
 }
 
 async function removeHofPhoto(){
-    if(!canManageHallOfFame()) return;
+    if(!canManage()) return;
     const current=ixData.hof?.[0];
     if(!current?.id){
         const win=document.getElementById('hofPhotoWindow');
@@ -4105,7 +4109,7 @@ function bindHofPhotoControls(){
     win.onwheel=e=>{ if(!img.src)return;e.preventDefault();const current=parseFloat(img.style.getPropertyValue('--hof-scale'))||1;const next=Math.max(.5,Math.min(3,current+(e.deltaY<0?.08:-.08)));img.style.setProperty('--hof-scale',next); };
 }
 async function saveHallOfFame(){
-    if(!canSubmitHallOfFame())return alert("You need active KNG Member access or above to submit a Hall of Fame entry.");
+    if(!canManage())return;
     let winner_name=document.getElementById('hofWinnerName')?.value.trim();
     const winner_discord_id=document.getElementById('hofWinnerDiscordId')?.value.trim() || '';
     let winnerStaff=(staff||[]).find(x => (winner_discord_id && String(x.discord_id||'')===winner_discord_id) || (winner_name && String(x.name||'').toLowerCase()===winner_name.toLowerCase()));
@@ -4143,7 +4147,7 @@ async function downloadHallOfFame(){
     const a=document.createElement('a');a.download=`KNG-Hall-of-Fame-${(document.getElementById('hofWinnerName')?.value||'Winner').replace(/[^a-z0-9_-]+/gi,'-')}.png`;a.href=canvas.toDataURL('image/png');a.click();
 }
 function openHofUpload(){
-    if(!canSubmitHallOfFame()) return alert("You need active KNG Member access or above to upload a Hall of Fame winner photo."); const input=document.createElement('input'); input.type='file'; input.accept='image/*';
+    if(!canManage()) return; const input=document.createElement('input'); input.type='file'; input.accept='image/*';
     input.onchange=async()=>{ const file=input.files?.[0]; if(!file)return; const ext=(file.name.split('.').pop()||'jpg').toLowerCase(); const path=`${currentUser.id}/${Date.now()}.${ext}`; const {error}=await supabaseClient.storage.from('kng-hall-of-fame').upload(path,file,{upsert:false,contentType:file.type}); if(error)return alert(error.message); const {data}=supabaseClient.storage.from('kng-hall-of-fame').getPublicUrl(path); const old=document.getElementById('hofPhotoWindow'); if(old){old.innerHTML=`<img id="hofWinnerPhoto" class="hof-winner-photo" src="${escapeHtml(data.publicUrl)}" alt="Winner" style="--hof-scale:1;--hof-x:0px;--hof-y:0px">`;bindHofPhotoControls();} };
     input.click();
 }
@@ -4310,7 +4314,7 @@ function openApproveEventSubmission(id){
 async function declineEventSubmission(id){ if(!canApproveEvents())return; const note=prompt('Reason for rejecting this submission:','Not approved'); if(note===null)return; const {error}=await supabaseClient.rpc('reject_kng_event_submission',{p_submission_id:id,p_note:note}); if(error)return alert(error.message); await loadInteractionData(); render(); }
 
 function renderPersonalDashboard(){
-    const team = getActiveWorkspaceTeam();
+    const team = getCurrentEntertainmentTeam();
     const today = formatDate(new Date());
     const goal = ixData.goals.find(g => g.goal_date === today) || {target_points:8,points_earned:0};
     const earned = Number(goal.points_earned || 0);
@@ -4490,9 +4494,7 @@ function rosterMemberHtml(r, team) {
     const rowDiscord = String(r.staff?.discord_id || r.discord_id || '').trim();
     const isSelf = Boolean(selfDiscord && rowDiscord && selfDiscord === rowDiscord);
     const controls = canManage() && !isSelf && isDirector() ? `<button class="mini-btn" onclick="openRosterAccessModal('${r.id}')">ACCESS</button>` : '';
-    const isDirectorTarget = String(r.hierarchy_level || '').toLowerCase() === 'director';
-    const mayEdit = (canManage() || getPermissionLevel()==='aux') && (!isDirectorTarget || isDirector());
-    const actions = !isSelf && mayEdit
+    const actions = !isSelf && (canManage() || getPermissionLevel()==='aux')
         ? `${canPromoteRosterRow(r) ? `<button class="mini-btn" onclick="promoteRosterMember('${r.id}')">PROMOTE</button>` : ''}<button class="mini-btn" onclick="openRosterEditModal('${r.id}')">EDIT</button>${canManage() && isDirector() ? `<button class="mini-btn danger" onclick="deleteRosterMember('${r.id}')">REMOVE</button>` : ''}`
         : `<span class="roster-view-only">${isSelf ? 'Own account' : 'View only'}</span>`;
     return `<div class="roster-row">
@@ -4814,7 +4816,7 @@ async function promoteRosterMember(id) {
     const order = ['member','sub_ld','ld','aux','adm','entertainment_resp','manager','director'];
     const currentIndex = order.indexOf(row.hierarchy_level);
     let next = order[Math.min(currentIndex + 1, order.length - 1)];
-    if (getPermissionLevel() === 'aux') next = order[Math.min(currentIndex + 1, order.indexOf('aux'))];
+    if (getPermissionLevel() === 'aux') next = 'aux';
     if (isCrossTeamManager() && ['entertainment_resp','manager','culture_manager','director'].includes(next)) return alert('You cannot promote staff into management or Director roles.');
     if (!next || next === row.hierarchy_level) return alert('They are already at the highest level.');
     const { error } = await supabaseClient.rpc('update_entertainment_roster_member', {
@@ -4865,37 +4867,17 @@ async function openRosterAccessModal(id) {
 }
 
 function openRosterEditModal(id) {
-    const actor = getPermissionLevel();
-    const auxOnly = actor === 'aux';
-    const crossManager = isCrossTeamManager();
-    if (!canManage() && !auxOnly) return;
-    const row = rosterData.find(r => String(r.id) === String(id));
+    if (!canManage() && getPermissionLevel() !== 'aux') return;
+    const row = rosterData.find(r => r.id === id);
     if (!row) return;
-    if (crossManager && String(row.hierarchy_level || '').toLowerCase() === 'director') return alert('Director accounts are managed by the Director only.');
     const name = getRosterDisplayName(row);
     const discordId = row.staff?.discord_id || row.discord_id || '';
-    const protectedManagementTarget = crossManager && (isCrossTeamManagementRole(row.hierarchy_level) || String(row.hierarchy_level || '').toLowerCase() === 'director');
-    const nameOnly = auxOnly || protectedManagementTarget;
-    const allowedLevels = crossManager
-        ? ['member','sub_ld','ld','aux','adm']
-        : ['director','manager','culture_manager','entertainment_resp','adm','aux','ld','sub_ld','member'];
-    const levelOptions = allowedLevels.map(v => `<option value="${v}" ${row.hierarchy_level===v?'selected':''}>${escapeHtml(rosterLevelLabel(v,row.team))}</option>`).join('');
-    showModal(`<div class="modal roster-edit-modal"><div class="modal-header"><div><span class="modal-eyebrow">KNG Entertainment</span><h2>Edit roster member</h2><small>${auxOnly ? 'AUX can update display names and promote staff up to AUX.' : protectedManagementTarget ? 'Management records are protected. You can update the displayed name only.' : crossManager ? 'Management can edit team staff and assign roles up to ADM.' : 'Change this roster entry.'}</small></div><button class="modal-close" onclick="closeModal()">×</button></div><form class="ops-form" id="rosterEditForm"><div class="form-grid"><div class="form-field"><label>Display name</label><input name="name" value="${escapeAttribute(name)}" required></div>${nameOnly ? '' : `<div class="form-field"><label>KNG ID</label><input name="kng_id" value="${escapeAttribute(row.kng_id || '')}"></div><div class="form-field"><label>Discord ID</label><input name="discord_id" value="${escapeAttribute(discordId)}"></div><div class="form-field"><label>Team</label><select name="team"><option value="actions" ${row.team==='actions'?'selected':''}>Actions</option><option value="interactions" ${row.team==='interactions'?'selected':''}>Interactions</option></select></div><div class="form-field"><label>Level</label><select name="hierarchy_level">${levelOptions}</select></div><div class="form-field"><label>Strikes</label><select name="strikes"><option value="0" ${Number(row.strikes||0)===0?'selected':''}>0</option><option value="1" ${Number(row.strikes||0)===1?'selected':''}>1</option><option value="2" ${Number(row.strikes||0)===2?'selected':''}>2</option><option value="3" ${Number(row.strikes||0)>=3?'selected':''}>3</option></select></div><div class="form-field"><label>Mentor</label><select name="mentor"><option value="false" ${!row.mentor?'selected':''}>N/A</option><option value="true" ${row.mentor?'selected':''}>Mentor</option></select></div><div class="form-field full"><label>Notes</label><textarea name="notes" rows="4">${escapeHtml(row.notes || '')}</textarea></div>`}</div><button class="primary-button">Save Changes</button></form></div>`);
+    const auxOnly = getPermissionLevel() === 'aux';
+    showModal(`<div class="modal roster-edit-modal"><div class="modal-header"><div><span class="modal-eyebrow">KNG Entertainment</span><h2>Edit roster member</h2><small>${auxOnly ? 'AUX can update display names only.' : 'Change their roster name, team or level here.'}</small></div><button class="modal-close" onclick="closeModal()">×</button></div><form class="ops-form" id="rosterEditForm"><div class="form-grid"><div class="form-field"><label>Name</label><input name="name" value="${escapeAttribute(name)}" required></div>${auxOnly ? '' : `<div class="form-field"><label>ID</label><input name="kng_id" value="${escapeAttribute(row.kng_id || '')}"></div><div class="form-field"><label>Discord ID</label><input name="discord_id" value="${escapeAttribute(discordId)}"></div><div class="form-field"><label>Team</label><select name="team"><option value="actions" ${row.team==='actions'?'selected':''}>Actions</option><option value="interactions" ${row.team==='interactions'?'selected':''}>Interactions</option></select></div><div class="form-field"><label>Level</label><select name="hierarchy_level">${['director','manager','culture_manager','entertainment_resp','adm','aux','ld','sub_ld','member'].map(v=>`<option value="${v}" ${row.hierarchy_level===v?'selected':''}>${escapeHtml(rosterLevelLabel(v,row.team))}</option>`).join('')}</select></div><div class="form-field"><label>Strikes</label><select name="strikes"><option value="0" ${Number(row.strikes||0)===0?'selected':''}>0</option><option value="1" ${Number(row.strikes||0)===1?'selected':''}>1</option><option value="2" ${Number(row.strikes||0)===2?'selected':''}>2</option><option value="3" ${Number(row.strikes||0)>=3?'selected':''}>3</option></select></div><div class="form-field"><label>Mentor</label><select name="mentor"><option value="false" ${!row.mentor?'selected':''}>N/A</option><option value="true" ${row.mentor?'selected':''}>Mentor</option></select></div><div class="form-field full"><label>Notes</label><textarea name="notes" rows="4">${escapeHtml(row.notes || '')}</textarea></div>`}</div><button class="primary-button">Save Changes</button></form></div>`);
     document.getElementById('rosterEditForm')?.addEventListener('submit', async e => {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
-        if (nameOnly) {
-            data.discord_id = String(row.staff?.discord_id || row.discord_id || '');
-            data.team = row.team;
-            data.hierarchy_level = row.hierarchy_level;
-            data.kng_id = row.kng_id || '';
-            data.strikes = row.strikes || 0;
-            data.mentor = row.mentor ? 'true' : 'false';
-            data.notes = row.notes || '';
-        }
-        if (crossManager && !nameOnly && !allowedLevels.includes(String(data.hierarchy_level || '').toLowerCase())) {
-            return alert('Culture Managers and Entertainment Resp can only assign roles up to ADM.');
-        }
+        if (getPermissionLevel() === 'aux') { data.discord_id = String(row.staff?.discord_id || row.discord_id || ''); data.team = row.team; data.hierarchy_level = row.hierarchy_level; data.kng_id = row.kng_id || ''; data.strikes = row.strikes || 0; data.mentor = row.mentor ? 'true' : 'false'; data.notes = row.notes || ''; }
         const { error } = await supabaseClient.rpc('update_entertainment_roster_member', {
             p_roster_id: id,
             p_name: String(data.name || '').trim(),
