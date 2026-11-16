@@ -1,0 +1,10 @@
+KNG Schedule startup reliability update
+
+- Adds bounded timeouts to the initial Discord session and Supabase loading stages.
+- Loads independent data sources concurrently instead of serially.
+- A slow optional data source no longer keeps the full-page loading screen visible indefinitely.
+- Auth state refresh runs outside the Supabase auth callback to avoid auth-lock deadlocks.
+- Adds a Try loading again button when the initial session check fails.
+- Updates app.js and supabase.js cache-busting versions in index.html.
+
+No database schema changes or SQL patch required.

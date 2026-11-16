@@ -1,0 +1,20 @@
+KNG FULL AUDIT - TARGETED FIXES
+
+1. Interactions Most Events Hosted leaderboard now combines:
+   - event host claims
+   - calendar event_staff allocations
+   - the separate Assign Event Helpers records stored in ops_helpers
+   Each current staff member receives at most one credit per completed event.
+
+2. Helper assignments are loaded specifically when the Interactions views load,
+   rather than depending on a previous visit to an admin-only page.
+
+3. Generic Event / Party / Meeting category tags are suppressed in event cards
+   where the actual named activity title is already displayed. Specific non-generic
+   categories remain visible.
+
+4. Run KNG-LEADERBOARD-HELPER-VISIBILITY-PATCH.sql once in Supabase. This lets
+   active staff read helper assignments for the leaderboard while retaining the
+   existing ADM+ write restriction.
+
+5. Existing event, helper, attendance and staff records are not modified.

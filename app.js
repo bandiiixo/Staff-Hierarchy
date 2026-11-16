@@ -6,6 +6,7 @@ const app = document.getElementById("app");
 
 let currentDate = new Date();
 let directorWorkspace = (() => { try { return localStorage.getItem("kng.directorWorkspace") || "director"; } catch (_) { return "director"; } })();
+let adminWorkspace = (() => { try { return localStorage.getItem("kng.adminWorkspace") || "team"; } catch (_) { return "team"; } })();
 let currentView = "month";
 let events = [];
 let allEvents = [];
@@ -25,6 +26,8 @@ let accessRequests = [];
 let opsLoadErrors = {};
 let ixView = kngStorage.get("kng.ixView", "");
 let hostPlannerDate = kngStorage.get("kng.hostPlannerDate", formatDate(new Date()));
+let hostEventCatalogue = [];
+let hostEventCatalogueLoaded = false;
 let ixData = { hof: [], goals: [], suggestions: [], eventSubmissions: [] };
 let rosterData = [];
 let accessDirectory = [];
@@ -43,63 +46,105 @@ let ixLoadErrors = {};
    INITIALISE
    ========================================================= */
 
+function withStartupTimeout(promise, label, ms = 12000) {
+    let timer;
+    return Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds. Check the connection and try again.`)), ms);
+        })
+    ]).finally(() => clearTimeout(timer));
+}
+
+async function runStartupTask(label, task, ms = 12000) {
+    try {
+        await withStartupTimeout(task(), label, ms);
+        return true;
+    } catch (error) {
+        console.error(`KNG startup: ${label} failed:`, error);
+        opsLoadErrors[`startup_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`] = error?.message || String(error);
+        return false;
+    }
+}
+
 async function init() {
     try {
         if (!supabaseClient) {
             throw new Error("Supabase could not be initialised. Check the Supabase CDN connection and the publishable key in supabase.js.");
         }
         if (app) {
-            app.innerHTML = `<div class="schedule-loading"><div class="loading-card"><strong>KNG Schedule</strong><span>Loading the calendar and workspace data...</span></div></div>`;
+            app.innerHTML = `<div class="schedule-loading"><div class="loading-card"><strong>KNG Schedule</strong><span>Connecting to KNG services...</span></div></div>`;
         }
-        const { data } = await supabaseClient.auth.getSession();
 
-        currentUser = data?.session?.user || null;
+        const sessionResult = await withStartupTimeout(
+            supabaseClient.auth.getSession(),
+            "Discord sign-in check",
+            10000
+        );
+        currentUser = sessionResult?.data?.session?.user || null;
 
-        await loadAccess();
-        await loadEventTypes();
-        await loadStaff();
-        await loadEvents();
-        await loadAccessRequests();
-        await loadOpsData();
-        await loadInteractionData();
-        await loadRosterData();
-        await loadActionData();
+        // Permission data is needed before loading role-gated requests. Give it a
+        // bounded wait so a stalled Supabase request cannot leave the spinner up forever.
+        await runStartupTask("Access permissions", loadAccess, 12000);
+
+        // These data sources are independent. Load them together instead of
+        // making one slow table block every other part of the website.
+        await Promise.all([
+            runStartupTask("Event types", loadEventTypes),
+            runStartupTask("Host event catalogue", loadHostEventCatalogue),
+            runStartupTask("Staff directory", loadStaff),
+            runStartupTask("Events", loadEvents),
+            runStartupTask("Access requests", loadAccessRequests),
+            runStartupTask("Operations data", loadOpsData),
+            runStartupTask("Interactions data", loadInteractionData),
+            runStartupTask("Roster", loadRosterData),
+            runStartupTask("Actions data", loadActionData)
+        ]);
 
         render();
 
-        supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            // Do not await Supabase work inside its auth callback. This avoids
+            // auth-lock deadlocks when the SDK is processing a token refresh.
             currentUser = session?.user || null;
-
-            await loadAccess();
-            await loadAccessRequests();
-            await loadOpsData();
-            await loadInteractionData();
-            await loadRosterData();
-            await loadActionData();
-            render();
+            Promise.resolve().then(async () => {
+                await runStartupTask("Refresh access permissions", loadAccess, 12000);
+                await Promise.all([
+                    runStartupTask("Refresh access requests", loadAccessRequests),
+                    runStartupTask("Refresh operations data", loadOpsData),
+                    runStartupTask("Refresh interactions data", loadInteractionData),
+                    runStartupTask("Refresh roster", loadRosterData),
+                    runStartupTask("Refresh actions data", loadActionData)
+                ]);
+                render();
+            }).catch(error => console.error("KNG auth refresh failed:", error));
         });
 
         setInterval(async () => {
-            await loadAccess();
-            await loadAccessRequests();
-            await loadEvents();
-            if (opsView !== "schedule") await loadOpsData();
-            await loadInteractionData();
-            await loadRosterData();
-            await loadActionData();
+            await runStartupTask("Periodic access refresh", loadAccess, 12000);
+            await Promise.all([
+                runStartupTask("Periodic access requests", loadAccessRequests),
+                runStartupTask("Periodic events refresh", loadEvents),
+                ...(opsView !== "schedule" ? [runStartupTask("Periodic operations refresh", loadOpsData)] : []),
+                runStartupTask("Periodic interactions refresh", loadInteractionData),
+                runStartupTask("Periodic roster refresh", loadRosterData),
+                runStartupTask("Periodic actions refresh", loadActionData)
+            ]);
             render();
         }, 60000);
 
     } catch (error) {
         console.error(error);
-
-        app.innerHTML = `
-            <div class="schedule-error">
-                <h1>KNG Schedule</h1>
-                <p>Something went wrong while loading the schedule.</p>
-                <pre>${escapeHtml(error.message || String(error))}</pre>
-            </div>
-        `;
+        if (app) {
+            app.innerHTML = `
+                <div class="schedule-error">
+                    <h1>KNG Schedule</h1>
+                    <p>The website couldn't finish connecting. This is usually a temporary connection or sign-in issue.</p>
+                    <pre>${escapeHtml(error.message || String(error))}</pre>
+                    <button class="primary-button" onclick="init()">Try loading again</button>
+                </div>
+            `;
+        }
     }
 }
 
@@ -313,18 +358,14 @@ async function approveAccessRequest(requestId, accessLevel) {
     await loadOpsData();
     await loadStaff();
     await loadRosterData();
+    // Keep the approver on the Access Requests page. Newly approved staff
+    // without a team are shown in a persistent allocation queue there; do not
+    // rely on a transient modal that can be dismissed by an auth refresh/render.
     render();
-    if (request?.discord_id && canManage()) {
-        const staffRow = staff.find(s => String(s.discord_id || '') === String(request.discord_id));
-        if (staffRow) {
-            const existing = rosterData.find(r => String(r.staff_id) === String(staffRow.id) && r.active !== false);
-            if (!existing) openPostApprovalAllocationModal(staffRow);
-        }
-    }
 }
 
 function openPostApprovalAllocationModal(staffRow) {
-    if (!canManage() || !staffRow) return;
+    if (!canApproveAccess() || !staffRow) return;
     showModal(`<div class="modal small-modal roster-allocation-modal"><div class="modal-header"><div><span class="modal-eyebrow">Staff Approved</span><h2>Allocate ${escapeHtml(staffRow.name || 'Staff Member')}</h2><small>Choose where they belong in KNG Entertainment.</small></div><button class="modal-close" onclick="closeModal()">×</button></div><div class="allocation-choice-grid"><button class="allocation-choice" onclick="finishPostApprovalAllocation('${escapeAttribute(staffRow.id)}','interactions')"><strong>INTERACTIONS</strong><small>Allocate to the Interactions roster</small></button><button class="allocation-choice" onclick="finishPostApprovalAllocation('${escapeAttribute(staffRow.id)}','actions')"><strong>ACTIONS</strong><small>Allocate to the Actions roster</small></button></div><div class="modal-footer"><button class="header-button" onclick="closeModal()">Do this later</button></div></div>`);
 }
 
@@ -347,7 +388,9 @@ function getPermissionLevel() {
     // Signing in proves identity, not permission. Until staff explicitly
     // confirms the account, an authenticated user remains PUBLIC.
     if (!currentUser || !currentAccess) return "public";
-    return currentAccess.access_level || "public";
+    // Supabase values are normally lowercase, but normalise defensively so
+    // legacy/imported AUX and ADM records cannot fail exact role comparisons.
+    return String(currentAccess.access_level || "public").trim().toLowerCase();
 }
 
 function permissionRank(level = getPermissionLevel()) {
@@ -364,6 +407,13 @@ function canManage() {
 
 function canEntertainment() {
     return hasPermission("adm");
+}
+
+function canCompleteInteractionEvent(event) {
+    if (!currentUser || !event || event.is_meeting || isEventCompleted(event)) return false;
+    const isInteractionsEvent = String(event.workspace || "interactions").toLowerCase() === "interactions";
+    if (!isInteractionsEvent) return false;
+    return canManage() || isInteractionsRosterMember();
 }
 
 function getCurrentStaffRecord() {
@@ -384,10 +434,23 @@ function getCurrentEntertainmentRoster() {
     ) || null;
 }
 
+function getCurrentEntertainmentRosters() {
+    const staffRow = getCurrentStaffRecord();
+    if (!staffRow) return [];
+    return (rosterData || []).filter(r =>
+        String(r.staff_id || "") === String(staffRow.id || "") && r.active !== false
+    );
+}
+
+function isInteractionsRosterMember() {
+    return getCurrentEntertainmentRosters().some(r => String(r.team || "").toLowerCase() === "interactions");
+}
+
 function getCurrentEntertainmentTeam() {
     const roster = getCurrentEntertainmentRoster();
     const team = String(roster?.team || "").toLowerCase();
-    return team === "actions" || team === "interactions" ? team : null;
+    if (team === "actions" || team === "interactions") return team;
+    return null;
 }
 
 function canUseTeam(team) {
@@ -395,7 +458,7 @@ function canUseTeam(team) {
     // Management, Culture Management and Directors are cross-team by design.
     // They can view both Actions and Interactions regardless of their roster team's assignment.
     if (['manager', 'culture_manager', 'entertainment_resp', 'director'].includes(getPermissionLevel()) || permissionRank() >= 3) return true;
-    return getCurrentEntertainmentTeam() === team;
+    return getCurrentEntertainmentRosters().some(r => String(r.team || "").toLowerCase() === team);
 }
 
 function isInteractionsStaff() {
@@ -410,7 +473,6 @@ function isTeamSpecificView(view) {
     return {
         "host-event": "interactions",
         "current-host": "interactions",
-        "hall-of-fame": "interactions",
         "interactions-leaderboard": "interactions",
         "actions-dashboard": "actions",
         "action-schedule": "actions",
@@ -439,16 +501,24 @@ function isCrossTeamManager() {
     return ['manager','culture_manager','entertainment_resp'].includes(getPermissionLevel());
 }
 function currentWorkspaceView() {
-    if (!canSwitchTeamWorkspace()) return null;
-    if (isDirector() && !['director','actions','interactions'].includes(directorWorkspace)) return 'director';
-    if (!isDirector() && !['actions','interactions'].includes(directorWorkspace)) return 'actions';
-    return directorWorkspace;
+    if (isDirector()) {
+        if (!['director','actions','interactions'].includes(directorWorkspace)) return 'director';
+        return directorWorkspace;
+    }
+    // AUX+ can open the separate Admin workspace. Cross-team managers keep
+    // their Actions/Interactions switcher and gain the same Admin destination.
+    if (permissionRank() >= 2 && adminWorkspace === 'admin') return 'admin';
+    if (canSwitchTeamWorkspace()) {
+        if (!['actions','interactions'].includes(directorWorkspace)) return 'actions';
+        return directorWorkspace;
+    }
+    return getCurrentEntertainmentTeam() || 'actions';
 }
 
 function canApproveAccess() {
-    // Access requests are a Director-controlled gate. Direct role grants still
-    // follow the ADM -> Management -> Director security chain.
-    return isDirector();
+    // AUX+ may confirm Member access. Higher approvals remain rank-limited
+    // by availableGrantLevels() and the database approval RPC.
+    return hasPermission("aux");
 }
 
 function canApproveEvents() {
@@ -482,20 +552,47 @@ function availableGrantLevels() {
 
 
 function directorWorkspaceSwitcher() {
-    if (!canSwitchTeamWorkspace()) return "";
-    const options = isDirector()
-        ? [["director", "DIRECTOR", "Management & control"],["actions", "ACTIONS", "Actions workspace"],["interactions", "INTERACTIONS", "Interactions workspace"]]
-        : [["actions", "ACTIONS", "Actions workspace"],["interactions", "INTERACTIONS", "Interactions workspace"]];
     const active = currentWorkspaceView();
-    return `<div class="director-workspace-switcher" role="group" aria-label="Team workspace">${options.map(([value,label,title]) => `<button type="button" class="workspace-switch-btn ${active===value?'active':''}" title="${title}" onclick="switchDirectorWorkspace('${value}')">${label}</button>`).join("")}</div>`;
+    if (isDirector()) {
+        const options = [["director", "DIRECTOR", "Management & control"],["actions", "ACTIONS", "Actions workspace"],["interactions", "INTERACTIONS", "Interactions workspace"]];
+        return `<div class="director-workspace-switcher" role="group" aria-label="Director and team workspaces">${options.map(([value,label,title]) => `<button type="button" class="workspace-switch-btn ${active===value?'active':''}" title="${title}" onclick="switchDirectorWorkspace('${value}')">${label}</button>`).join("")}</div>`;
+    }
+    if (permissionRank() < 2) {
+        if (!canSwitchTeamWorkspace()) return "";
+        const options = [["actions", "ACTIONS", "Actions workspace"],["interactions", "INTERACTIONS", "Interactions workspace"]];
+        return `<div class="director-workspace-switcher" role="group" aria-label="Team workspace">${options.map(([value,label,title]) => `<button type="button" class="workspace-switch-btn ${active===value?'active':''}" title="${title}" onclick="switchDirectorWorkspace('${value}')">${label}</button>`).join("")}</div>`;
+    }
+    const team = getCurrentEntertainmentTeam() || 'actions';
+    const options = canSwitchTeamWorkspace()
+        ? [["actions", "ACTIONS", "Actions workspace"],["interactions", "INTERACTIONS", "Interactions workspace"],["admin", "ADMIN", "Admin tools and approvals"]]
+        : [[team, team.toUpperCase(), `${team} workspace`],["admin", "ADMIN", "Admin tools and approvals"]];
+    return `<div class="director-workspace-switcher" role="group" aria-label="Team and admin workspace">${options.map(([value,label,title]) => `<button type="button" class="workspace-switch-btn ${active===value?'active':''}" title="${title}" onclick="switchDirectorWorkspace('${value}')">${label}</button>`).join("")}</div>`;
 }
 
 async function switchDirectorWorkspace(workspace) {
-    if (!canSwitchTeamWorkspace()) return;
-    if (isDirector()) { if (!["director","actions","interactions"].includes(workspace)) workspace = "director"; }
-    else if (!["actions","interactions"].includes(workspace)) return;
-    directorWorkspace = workspace;
-    try { localStorage.setItem("kng.directorWorkspace", workspace); localStorage.removeItem("kng.ixView"); localStorage.setItem("kng.opsView", "schedule"); } catch (_) {}
+    if (isDirector()) {
+        if (!["director","actions","interactions"].includes(workspace)) workspace = "director";
+        directorWorkspace = workspace;
+        try { localStorage.setItem("kng.directorWorkspace", workspace); } catch (_) {}
+    } else if (permissionRank() >= 2) {
+        if (workspace === 'admin') {
+            adminWorkspace = 'admin';
+            try { localStorage.setItem("kng.adminWorkspace", adminWorkspace); } catch (_) {}
+        } else if (canSwitchTeamWorkspace() && ["actions","interactions"].includes(workspace)) {
+            adminWorkspace = 'team';
+            directorWorkspace = workspace;
+            try { localStorage.setItem("kng.adminWorkspace", adminWorkspace); localStorage.setItem("kng.directorWorkspace", workspace); } catch (_) {}
+        } else {
+            const team = getCurrentEntertainmentTeam() || 'actions';
+            if (workspace !== team) return;
+            adminWorkspace = 'team';
+            try { localStorage.setItem("kng.adminWorkspace", adminWorkspace); } catch (_) {}
+        }
+    } else if (canSwitchTeamWorkspace() && ["actions","interactions"].includes(workspace)) {
+        directorWorkspace = workspace;
+        try { localStorage.setItem("kng.directorWorkspace", workspace); } catch (_) {}
+    } else return;
+    try { localStorage.removeItem("kng.ixView"); localStorage.setItem("kng.opsView", "schedule"); } catch (_) {}
     ixView = "";
     opsView = "schedule";
     render();
@@ -534,8 +631,9 @@ function renderApp() {
         return;
     }
 
+    const scheduleActionsTheme = currentWorkspaceView() === "actions" || (!canSwitchTeamWorkspace() && getCurrentEntertainmentTeam() === "actions");
     app.innerHTML = `
-        <div class="schedule-app">
+        <div class="schedule-app ${scheduleActionsTheme ? "actions-theme" : ""}">
 
             <header class="schedule-header">
 
@@ -645,6 +743,11 @@ function renderApp() {
 
                 </section>
 
+
+                <div class="schedule-type-legend" aria-label="Schedule colour key">
+                    <span class="schedule-legend-item"><i class="schedule-legend-swatch action"></i> Actions</span>
+                    <span class="schedule-legend-item"><i class="schedule-legend-swatch event"></i> Events</span>
+                </div>
 
                 <section id="calendarContainer"
                     class="calendar-container">
@@ -820,15 +923,15 @@ function renderMonth(container) {
                     ).join("")}
 
                     ${(() => {
-                        const f3Count = events.filter(event =>
+                        const dayScheduleItems = events.filter(event =>
                             event.event_date === dateString &&
                             !event.is_meeting &&
                             event.status !== 'cancelled'
-                        ).length;
-
-                        if (!f3Count) return '';
-
-                        return `<button type="button" class="month-f3-summary" onclick="event.stopPropagation(); currentDate = new Date('${dateString}T12:00:00'); currentView = 'day'; renderCalendar();">🎮 <strong>${f3Count}</strong> F3 event${f3Count === 1 ? '' : 's'}</button>`;
+                        );
+                        const actionCount = dayScheduleItems.filter(isActionCalendarEntry).length;
+                        const eventCount = dayScheduleItems.length - actionCount;
+                        if (!dayScheduleItems.length) return '';
+                        return `<button type="button" class="month-schedule-summary" onclick="event.stopPropagation(); currentDate = new Date('${dateString}T12:00:00'); currentView = 'day'; renderCalendar();">${actionCount ? `<span class="month-summary-count action"><i></i><strong>${actionCount}</strong> Action${actionCount === 1 ? '' : 's'}</span>` : ''}${eventCount ? `<span class="month-summary-count event"><i></i><strong>${eventCount}</strong> Event${eventCount === 1 ? '' : 's'}</span>` : ''}</button>`;
                     })()}
 
                 </div>
@@ -1183,8 +1286,18 @@ function renderTimelineEvents(hourEvents) {
     }).join("");
 }
 
+function isActionCalendarEntry(event) {
+    return String(event?.workspace || '').trim().toLowerCase() === 'actions';
+}
+
+function calendarEntryColour(event) {
+    // Workspace is the source of truth: Actions are blue; all other scheduled events are red.
+    return isActionCalendarEntry(event) ? '#2478d4' : '#d61f3a';
+}
+
 function renderCalendarEvent(event, context = "default", layout = null) {
-    const colour = event.event_types?.colour || "#3b82f6";
+    const colour = calendarEntryColour(event);
+    const entryClass = isActionCalendarEntry(event) ? 'calendar-action-entry' : 'calendar-event-entry';
     const startM = hostTimeToMinutes(String(event.start_time || "00:00"));
     const endM = hostTimeToMinutes(String(event.end_time || event.start_time || "01:00"));
     const duration = Math.max(15, endM - startM);
@@ -1194,7 +1307,7 @@ function renderCalendarEvent(event, context = "default", layout = null) {
     const required = event.staff_required || 0;
     const completed = isEventCompleted(event);
     const timelineStyle = layout ? `position:absolute;left:${layout.left}%;width:${layout.width}%;top:${layout.top}px;height:${layout.height}px;` : "";
-    return `<div class="calendar-event ${compact ? 'timeline-event' : ''} ${completed ? 'event-completed' : ''}" style="--event-colour:${colour};--event-duration:${duration};${timelineStyle}" onclick="event.stopPropagation(); openEvent('${event.id}')">
+    return `<div class="calendar-event ${entryClass} ${compact ? 'timeline-event' : ''} ${completed ? 'event-completed' : ''}" style="--event-colour:${colour};--event-duration:${duration};${timelineStyle}" onclick="event.stopPropagation(); openEvent('${event.id}')">
         <span class="event-time">${formatTime(event.start_time)}</span>
         <strong>${escapeHtml(event.title)}</strong>
         <span class="event-type">${escapeHtml(type)}</span>
@@ -1207,8 +1320,8 @@ function renderCalendarEvent(event, context = "default", layout = null) {
 
 function renderAgendaEvent(event) {
 
-    const colour =
-        event.event_types?.colour || "#3b82f6";
+    const colour = calendarEntryColour(event);
+    const entryClass = isActionCalendarEntry(event) ? 'calendar-action-entry' : 'calendar-event-entry';
 
     const allocated =
         event.event_staff?.length || 0;
@@ -1219,7 +1332,7 @@ function renderAgendaEvent(event) {
 
     return `
         <article
-            class="agenda-event"
+            class="agenda-event ${entryClass}"
             style="--event-colour:${colour}"
             onclick="openEvent('${event.id}')"
         >
@@ -1651,7 +1764,7 @@ async function openEvent(eventId) {
     const colour = event.event_types?.colour || "#3b82f6";
     const allocations = event.event_staff || [];
     const passed = new Date(`${event.event_date}T${event.end_time}`) <= new Date();
-    const canComplete = canManage() && !event.is_meeting && passed && !isEventCompleted(event);
+    const canComplete = canCompleteInteractionEvent(event) && passed;
     const completedLabel = isEventCompleted(event) ? `<div class="event-completion-summary"><b>Completed</b>${event.attendance_count !== null && event.attendance_count !== undefined ? `<span>Attendance: ${Number(event.attendance_count)}</span>` : ''}${event.winner_name ? `<span>Winner: ${escapeHtml(event.winner_name)}</span>` : ''}</div>` : '';
     showModal(`<div class="modal event-detail-modal">
         <div class="event-detail-accent" style="background:${colour}"></div>
@@ -1663,16 +1776,17 @@ async function openEvent(eventId) {
             ${event.description ? `<div class="event-detail-description"><strong>Description</strong><p>${escapeHtml(event.description).replace(/\n/g,'<br>')}</p></div>` : ''}
             ${event.winner_name ? `<div class="event-detail-description"><strong>🏆 Winner</strong><p>${escapeHtml(event.winner_name)}</p></div>` : ''}
             ${event.attendance_count !== null && event.attendance_count !== undefined ? `<div class="event-detail-description"><strong>👥 Attendance</strong><p>${Number(event.attendance_count)} people attended</p></div>` : ''}
-            ${event.staff_required > 0 ? `<div class="staff-section"><div class="staff-section-header"><div><strong>Staff Allocation</strong><span>${allocations.length}/${event.staff_required}</span></div>${canManage()?`<button class="secondary-button" onclick="openStaffAllocation('${event.id}')">Manage Staff</button>`:''}</div>${allocations.length?`<div class="allocated-staff">${allocations.map(a=>`<div class="staff-chip"><span>${escapeHtml(a.staff?.name||"Unknown")}</span>${a.role?`<small>${escapeHtml(a.role)}</small>`:''}</div>`).join('')}</div>`:`<div class="no-staff">No staff allocated yet.</div>`}</div>`:''}
+            ${event.staff_required > 0 ? `<div class="staff-section"><div class="staff-section-header"><div><strong>Event Helpers</strong><span>${allocations.length}/${event.staff_required}</span></div>${canManage()?`<button class="secondary-button" onclick="openStaffAllocation('${event.id}')">Manage Staff</button>`:''}</div>${allocations.length?`<div class="allocated-staff">${allocations.map(a=>`<div class="staff-chip"><span>${escapeHtml(a.staff?.name||"Unknown")}</span>${a.role?`<small>${escapeHtml(a.role)}</small>`:''}</div>`).join('')}</div>`:`<div class="no-staff">No helpers allocated yet.</div>`}</div>`:''}
             ${completedLabel}
             <div class="event-feedback-box"><div class="feedback-actions"><button class="secondary-button" onclick="openEventFeedbackModal('${event.id}','feedback')">Give Feedback</button><button class="secondary-button" onclick="openEventFeedbackModal('${event.id}','suggestion')">Suggest an Improvement</button></div>${feedbackAverage?`<div class="feedback-summary"><b>Public feedback: ${feedbackAverage}/5</b><small>Showing ${feedbackRows.length} recent response${feedbackRows.length===1?'':'s'}</small></div>`:''}${feedbackRows.length?`<div class="public-feedback-list">${feedbackRows.map(r=>`<article><b>${escapeHtml(r.display_name||'Anonymous')} · ${'★'.repeat(Number(r.rating||0))}</b><p>${escapeHtml(r.feedback||'')}</p></article>`).join('')}</div>`:''}${suggestionRows.length?`<div class="public-feedback-list"><b>Recent suggestions</b>${suggestionRows.map(r=>`<article><b>${escapeHtml(r.display_name||'Anonymous')}</b><p>${escapeHtml(r.suggestion||'')}</p></article>`).join('')}</div>`:''}</div>
         </div>
-        ${canManage()?`<div class="modal-footer"><button class="danger-button" onclick="deleteEvent('${event.id}')">Delete Event</button><div class="modal-footer-right">${canComplete?`<button class="primary-button" onclick="openCompleteEventModal('${event.id}')">Complete Event</button>`:`${isEventCompleted(event)?`<span class="ops-pill">Completed</span>`:''}`}<button class="secondary-button" onclick="openEditEvent('${event.id}')">Edit Event</button><button class="primary-button" onclick="closeModal()">Done</button></div></div>`:`<div class="modal-footer"><button class="primary-button" onclick="closeModal()">Close</button></div>`}
+        ${(canManage() || canComplete)?`<div class="modal-footer">${canManage()?`<button class="danger-button" onclick="deleteEvent('${event.id}')">Delete Event</button>`:''}<div class="modal-footer-right">${canComplete?`<button class="primary-button" onclick="openCompleteEventModal('${event.id}')">Complete Event</button>`:`${isEventCompleted(event)?`<span class="ops-pill">Completed</span>`:''}`}${canManage()?`<button class="secondary-button" onclick="openEditEvent('${event.id}')">Edit Event</button>`:''}<button class="primary-button" onclick="closeModal()">Done</button></div></div>`:`<div class="modal-footer"><button class="primary-button" onclick="closeModal()">Close</button></div>`}
     </div>`);
 }
 
 function openCompleteEventModal(eventId){
-    if(!canManage()) return;
+    const targetEvent = events.find(e => String(e.id) === String(eventId));
+    if(!canCompleteInteractionEvent(targetEvent)) return;
     const event=events.find(e=>e.id===eventId);
     if(!event || event.is_meeting || isEventCompleted(event)) return;
     showModal(`<div class="modal small-modal"><div class="modal-header"><div><span class="modal-eyebrow">Event completion</span><h2>Complete ${escapeHtml(event.title)}</h2><small>Record attendance and the winner before confirming.</small></div><button class="modal-close" onclick="closeModal()">×</button></div><form class="ops-form" id="completeEventForm"><label>How many people showed up?<input name="attendance_count" type="number" min="0" max="100000" required></label><label>Winner name<input name="winner_name" maxlength="120" placeholder="Winner name" required></label><label>Completion notes<textarea name="completion_notes" rows="4" maxlength="1000" placeholder="Optional notes"></textarea></label><button class="primary-button">Confirm Completed Event</button></form></div>`);
@@ -1680,7 +1794,9 @@ function openCompleteEventModal(eventId){
 }
 
 async function completeEvent(e,eventId){
-    e.preventDefault(); if(!canManage()) return;
+    e.preventDefault();
+    const targetEvent = events.find(item => String(item.id) === String(eventId));
+    if(!canCompleteInteractionEvent(targetEvent)) return alert("Only active Interactions team members can complete Interactions events.");
     const data=Object.fromEntries(new FormData(e.target).entries());
     const attendance=Math.max(0,Number(data.attendance_count)||0);
     const {error}=await supabaseClient.from('events').update({status:'completed',attendance_count:attendance,winner_name:String(data.winner_name||'').trim()||null,completion_notes:String(data.completion_notes||'').trim()||null,completed_at:new Date().toISOString(),completed_by:currentUser?.id||null,updated_by:currentUser?.id||null}).eq('id',eventId);
@@ -2069,7 +2185,7 @@ function openStaffAllocation(eventId) {
 
                 <div>
                     <span class="modal-eyebrow">
-                        Staff Allocation
+                        Event Helpers
                     </span>
 
                     <h2>
@@ -2092,11 +2208,11 @@ function openStaffAllocation(eventId) {
                     ${allocatedIds.size}
                     /
                     ${event.staff_required}
-                    staff allocated
+                    helpers allocated
                 </strong>
 
                 <span>
-                    Select the staff members attending this event.
+                    Select the staff members helping to run this event. Each helper receives the same hosting leaderboard credit as the host when the event is completed.
                 </span>
 
             </div>
@@ -2159,7 +2275,7 @@ function openStaffAllocation(eventId) {
                 <button
                     class="primary-button"
                     onclick="saveStaffAllocation('${event.id}')">
-                    Save Allocation
+                    Save Helpers
                 </button>
 
             </div>
@@ -2252,7 +2368,7 @@ async function saveStaffAllocation(eventId) {
             toAdd.map(staffId => ({
                 event_id: eventId,
                 staff_id: staffId,
-                role: "Staff",
+                role: "Helper",
                 allocated_by: currentUser?.id || null
             }));
 
@@ -2761,7 +2877,6 @@ function operationsNavHtml() {
         ["host-event", "🎲", "Host an Event"],
         ["current-host", "🎤", "Current Host"],
         ["interactions-leaderboard", "♛", "Leaderboard"],
-        ["hall-of-fame", "▣", "Hall of Fame"]
     ];
     const actionItems = [
         ["actions-dashboard", "⚡", "Actions Dashboard"],
@@ -2778,6 +2893,7 @@ function operationsNavHtml() {
         ["personal-dashboard", "◎", "Personal Dashboard"],
         ["staff-roster", "♙", "Staff Roster"],
         ["prizes", "◇", "Prizes & Commands"],
+        ["hall-of-fame", "▣", "Hall of Fame"],
         ["command-dashboard", "⌂", "Command Dashboard"]
     ];
     const managementItems = [
@@ -2789,27 +2905,37 @@ function operationsNavHtml() {
     const team = getCurrentEntertainmentTeam();
     const isDirectorUser = isDirector();
     const isWorkspaceManager = canSwitchTeamWorkspace();
-    const directorView = isWorkspaceManager ? currentWorkspaceView() : null;
-    const baseShared = [sharedItems[0], sharedItems[1], ...(permissionRank() >= 1 ? [...sharedItems.slice(2,4), sharedItems[4]] : [])];
+    const directorView = currentWorkspaceView();
+    const baseShared = [
+        sharedItems[0],
+        sharedItems[1],
+        ...(permissionRank() >= 1 ? [sharedItems[2], sharedItems[3], sharedItems[4]] : [])
+    ];
+    const adminItems = [
+        ...(canApproveAccess() ? [managementItems[1]] : []),
+        ...(permissionRank() >= 2 ? [sharedItems[5]] : [])
+    ];
     let items;
     if (isWorkspaceManager) {
         if (directorView === "actions") {
             items = [...baseShared, ...actionItems];
         } else if (directorView === "interactions") {
-            items = [...baseShared, ...interactionItems];
+            items = [...baseShared, ...interactionItems, ...(permissionRank() >= 1 ? [sharedItems[5]] : [])];
         } else if (isDirectorUser && directorView === "director") {
-            items = [...baseShared, ...managementItems];
+            items = [...baseShared, ...managementItems, sharedItems[5]];
         } else {
             items = [...baseShared, ...actionItems];
         }
+    } else if (directorView === 'admin') {
+        items = adminItems;
     } else {
-        items = [...baseShared, ...(canUseTeam("actions") ? actionItems : []), ...(canUseTeam("interactions") ? interactionItems : [])];
+        items = [...baseShared, ...(canUseTeam("actions") ? actionItems : []), ...(canUseTeam("interactions") ? [...interactionItems, ...(permissionRank() >= 1 ? [sharedItems[5]] : [])] : [])];
     }
     const ixPages = [
         "event-suggestions","public-f3","command-dashboard","interactions-leaderboard",
         "hall-of-fame","personal-dashboard","staff-roster","current-host","actions-dashboard"
     ];
-    const activeTeam = isWorkspaceManager ? (directorView === "director" ? "DIRECTOR" : directorView.toUpperCase()) : (team ? team.toUpperCase() : "STAFF");
+    const activeTeam = directorView === "admin" ? "ADMIN" : (isWorkspaceManager ? (directorView === "director" ? "DIRECTOR" : directorView.toUpperCase()) : (team ? team.toUpperCase() : "STAFF"));
     return `<aside class="integrated-sidebar" aria-label="KNG navigation">
         <div class="sidebar-section-label">KNG ENTERTAINMENT</div>
         <div class="sidebar-team-badge ${team ? `team-${team}` : "team-management"}"><span></span>${activeTeam} WORKSPACE</div>
@@ -2857,7 +2983,7 @@ function opsHeader(title="KNG Schedule", subtitle="Events & Staff Planning") {
 
 async function switchOpsView(view) {
     const publicViews = ["event-suggestions", "public-f3"];
-    const sharedStaffViews = ["schedule","event-suggestions","personal-dashboard","staff-roster","command-dashboard"];
+    const sharedStaffViews = ["schedule","event-suggestions","personal-dashboard","staff-roster","command-dashboard","hall-of-fame"];
     const ixViews = ["command-dashboard","interactions-leaderboard","hall-of-fame","personal-dashboard","staff-roster","event-suggestions","public-f3","current-host","actions-dashboard"];
     const team = isTeamSpecificView(view);
 
@@ -2873,7 +2999,15 @@ async function switchOpsView(view) {
         showLoginMessage();
         return;
     }
-    if ((view === "access" || view === "director-staff") && !isDirector()) {
+    if (view === "hall-of-fame" && (!currentUser || permissionRank() < 1)) {
+        showLoginMessage();
+        return;
+    }
+    if (view === "access" && !canApproveAccess()) {
+        showLoginMessage();
+        return;
+    }
+    if (view === "director-staff" && !isDirector()) {
         showLoginMessage();
         return;
     }
@@ -2955,7 +3089,9 @@ function renderOperations() {
         render();
         return;
     }
-    if ((opsView === "access" || opsView === "director-staff") && !isDirector()) { showLoginMessage(); return; }
+    // Access Requests are an AUX+ admin function. Director Staff Search remains Director-only.
+    if (opsView === "access" && !canApproveAccess()) { showLoginMessage(); return; }
+    if (opsView === "director-staff" && !isDirector()) { showLoginMessage(); return; }
     const titles = {
         dashboard: ["KNG Entertainment Dashboard", "Events, completions and staff operations"],
         "command-dashboard": ["Command Dashboard", "KNG Interactions + Entertainment command centre"],
@@ -2983,7 +3119,8 @@ function renderOperations() {
         "action-goals": ["Action Goals", "Team targets and monthly progress"],
     };
     const [title, subtitle] = titles[opsView] || titles.dashboard;
-    app.innerHTML = `<div class="schedule-app operations-app">
+    const actionsTheme = currentWorkspaceView() === "actions" || (!canSwitchTeamWorkspace() && getCurrentEntertainmentTeam() === "actions");
+    app.innerHTML = `<div class="schedule-app operations-app ${actionsTheme ? "actions-theme" : ""}">
         ${opsHeader(title, subtitle)}
         <div class="app-body operations-body">
             ${operationsNavHtml()}
@@ -3023,8 +3160,11 @@ async function searchDirectorStaffDirectory(query='') {
     }
     box.innerHTML = rows.map(r => {
         const level = String(r.access_level || 'member').toLowerCase();
-        const teams = r.teams ? String(r.teams).split(',').map(x => x.trim().toUpperCase()).join(' · ') : 'NOT ALLOCATED';
+        const teams = r.teams ? String(r.teams).split(',').map(x => x.trim().toLowerCase()==='leadership' ? 'KNG LEADERSHIP' : x.trim().toUpperCase()).join(' · ') : 'NOT ALLOCATED';
         const roles = r.roster_roles ? String(r.roster_roles).split(',').map(x => rosterLevelLabel(x.trim(), '')).join(' · ') : 'NOT ON ROSTER';
+        const allocatedTeams = String(r.teams || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean);
+        const currentTeam = allocatedTeams.includes('leadership') ? 'leadership' : allocatedTeams.includes('actions') ? 'actions' : allocatedTeams.includes('interactions') ? 'interactions' : '';
+        const teamAllocationControls = `<div class="director-team-allocation"><small>${currentTeam ? `Current allocation: ${escapeHtml(currentTeam === 'leadership' ? 'KNG Leadership' : currentTeam)}` : 'Not currently allocated'}</small><label for="director-team-${escapeAttribute(r.discord_id || '')}">Allocate / move team</label><select id="director-team-${escapeAttribute(r.discord_id || '')}"><option value="actions" ${currentTeam==='actions'?'selected':''}>Actions</option><option value="interactions" ${currentTeam==='interactions'?'selected':''}>Interactions</option><option value="leadership" ${currentTeam==='leadership'?'selected':''}>KNG Leadership</option></select><button class="secondary-button" onclick="allocateDirectorSearchStaff('${escapeAttribute(r.staff_id || r.id || '')}','${escapeAttribute(r.discord_id || '')}')">Save Team Allocation</button></div>`;
         const options = [
             ['member','Member'],['aux','AUX'],['adm','ADM'],['entertainment_resp','Entertainment Resp'],['culture_manager','Culture Manager'],['manager','Management'],['director','Director']
         ].map(([v,l]) => `<option value="${v}" ${level===v?'selected':''}>${l}</option>`).join('');
@@ -3039,6 +3179,8 @@ async function searchDirectorStaffDirectory(query='') {
                 <select id="director-access-${escapeAttribute(r.discord_id || '')}" aria-label="Set access for ${escapeAttribute(r.name || 'staff member')}">${options}</select>
                 <button class="primary-button" onclick="setDirectorStaffAccess('${escapeAttribute(r.discord_id || '')}')">Set Access</button>
             </div>
+            ${teamAllocationControls}
+            ${r.access_active ? `<div class="director-staff-termination"><button class="mini-btn danger" type="button" onclick="terminateDirectorStaffAccount('${escapeAttribute(r.discord_id || '')}')">TERMINATE STAFF ACCOUNT</button><small class="ops-muted">Deactivates website access and removes active team allocations. They can request access again later.</small></div>` : ''}
         </article>`;
     }).join('');
 }
@@ -3059,6 +3201,18 @@ function renderDirectorStaffSearch() {
     </div>`;
 }
 
+async function allocateDirectorSearchStaff(staffId, discordId) {
+    if (!isDirector()) return alert('Director access is required to allocate staff from this directory.');
+    if (!staffId) return alert('This account does not have a linked staff record yet. Ask them to log in through Discord first.');
+    const teamSelect = document.getElementById(`director-team-${discordId}`);
+    const team = String(teamSelect?.value || '');
+    if (!['actions','interactions','leadership'].includes(team)) return alert('Choose Actions, Interactions or KNG Leadership.');
+    const teamLabel = team === 'leadership' ? 'KNG Leadership' : team === 'actions' ? 'Actions' : 'Interactions';
+    if (!confirm(`Allocate ${discordId || 'this staff member'} to ${teamLabel}?`)) return;
+    await allocateEntertainmentTeam(staffId, team);
+    await searchDirectorStaffDirectory(document.getElementById('directorStaffSearchInput')?.value || '');
+}
+
 async function setDirectorStaffAccess(discordId) {
     if (!isDirector()) return;
     const select = document.getElementById(`director-access-${discordId}`);
@@ -3075,11 +3229,37 @@ async function setDirectorStaffAccess(discordId) {
     await searchDirectorStaffDirectory(document.getElementById('directorStaffSearchInput')?.value || '');
 }
 
+async function terminateDirectorStaffAccount(discordId) {
+    if (!isDirector()) return alert('Director access is required to terminate staff accounts.');
+    const ownDiscordId = String(getDiscordIdentity()?.discordId || '');
+    if (!discordId || String(discordId) === ownDiscordId) return alert('You cannot terminate your own account.');
+    const reason = prompt(`Reason for terminating Discord account ${discordId}:`, 'Staff departure');
+    if (reason === null) return;
+    if (!confirm(`FINAL CONFIRMATION\n\nTerminate ${discordId} from KNG?\n\nThis will deactivate their website access, remove their active Actions/Interactions roster allocations and reject any pending access request. They can request staff access again in the future through the normal process.`)) return;
+    const { error } = await supabaseClient.rpc('director_terminate_staff_account', {
+        p_discord_id: String(discordId),
+        p_reason: String(reason || '').trim() || 'Staff departure'
+    });
+    if (error) return alert(error.message || String(error));
+    await loadAccessRequests();
+    await loadStaff();
+    await loadRosterData();
+    await loadAccess();
+    await searchDirectorStaffDirectory(document.getElementById('directorStaffSearchInput')?.value || '');
+    alert(`Staff account ${discordId} has been terminated.`);
+}
+
 function renderAccessRequestsView() {
     const pending = (accessRequests || []).filter(r => String(r.status || "pending").toLowerCase() === "pending");
     const processed = (accessRequests || []).filter(r => String(r.status || "pending").toLowerCase() !== "pending");
     const grantLevels = availableGrantLevels();
     const levelLabel = level => String(level || "public").toUpperCase();
+    const activeRosterStaffIds = new Set((rosterData || []).filter(r => r.active !== false).map(r => String(r.staff_id || "")));
+    const unallocatedStaff = (staff || []).filter(person => person.active !== false && person.id && !activeRosterStaffIds.has(String(person.id)));
+    const unallocatedPanel = unallocatedStaff.length ? `<section class="ops-card unallocated-staff-panel">
+        <div class="ops-card-head"><div><h3>Approved Staff Awaiting Team Allocation</h3><small>Allocate operational staff to Actions or Interactions, or place senior staff in the separate KNG Leadership group.</small></div><span class="mode-badge staff-mode">${unallocatedStaff.length} UNALLOCATED</span></div>
+        <div class="access-history-list">${unallocatedStaff.map(person => `<article class="ops-card access-request-card"><div class="ops-card-head"><div><h3>${escapeHtml(String(person.name || person.display_name || 'Staff member'))}</h3><small>${escapeHtml(String(person.discord_id || 'Discord ID unavailable'))}</small></div></div><div class="ops-actions"><button class="primary-button" onclick="allocateEntertainmentTeam('${escapeAttribute(person.id)}','actions')">Add to Actions</button><button class="secondary-button" onclick="allocateEntertainmentTeam('${escapeAttribute(person.id)}','interactions')">Add to Interactions</button>${isDirector() ? `<button class="secondary-button leadership-allocate-btn" onclick="allocateEntertainmentTeam('${escapeAttribute(person.id)}','leadership')">Add to KNG Leadership</button>` : ''}${isDirector() && person.discord_id ? `<button class="mini-btn danger" type="button" onclick="terminateDirectorStaffAccount('${escapeAttribute(person.discord_id)}')">TERMINATE STAFF ACCESS</button>` : ''}</div><small class="ops-muted">${isDirector() ? 'Review this account here before allocating. Termination deactivates website access; it does not permanently ban future requests.' : 'Awaiting team allocation.'}</small></article>`).join('')}</div>
+    </section>` : `<section class="ops-card unallocated-staff-panel"><h3>No staff awaiting team allocation</h3><p class="ops-muted">Newly approved staff who are not on a team will appear here until allocated.</p></section>`;
 
     const requestCard = r => {
         const status = String(r.status || "pending").toLowerCase();
@@ -3098,13 +3278,14 @@ function renderAccessRequestsView() {
             </div>
             ${status === "pending" ? `<div class="ops-actions">
                 ${grantLevels.map(([value, label]) => `<button class="primary-button" onclick="approveAccessRequest('${escapeAttribute(r.id)}','${escapeAttribute(value)}')">Approve ${escapeHtml(label)}</button>`).join("")}
-                <button class="secondary-button" onclick="rejectAccessRequest('${escapeAttribute(r.id)}')">Reject</button>
+                ${isDirector() ? `<button class="secondary-button" onclick="rejectAccessRequest('${escapeAttribute(r.id)}')">Reject</button>` : ""}
             </div>` : ""}
         </article>`;
     };
 
     return `<div class="ops-view access-requests-view">
-        ${opsCard("Access Requests", `<p class="ops-muted">Director approval queue. Direct grants still follow the security chain: ADM → AUX, Management → ADM, Director → any non-Director level.</p>`, `<span class="mode-badge staff-mode">${pending.length} PENDING</span>`)}
+        ${unallocatedPanel}
+        ${opsCard("Access Requests", `<p class="ops-muted">AUX+ can approve Member requests. Higher access levels remain restricted by the approval hierarchy: AUX → Member, ADM → AUX, Management → ADM, Director → all levels.</p>`, `<span class="mode-badge staff-mode">${pending.length} PENDING</span>`)}
         ${pending.length ? pending.map(requestCard).join("") : `<div class="ops-card"><h3>No pending requests</h3><p class="ops-muted">There are currently no staff access requests waiting for approval.</p></div>`}
         ${processed.length ? `<details class="ops-card"><summary>Processed requests (${processed.length})</summary><div class="access-history-list">${processed.slice(0, 100).map(requestCard).join("")}</div></details>` : ""}
     </div>`;
@@ -3323,12 +3504,28 @@ function renderOpsPoints() {
         </div>`;
 }
 
+
+async function loadHostEventCatalogue() {
+    if (!currentUser) { hostEventCatalogue = []; hostEventCatalogueLoaded = false; return; }
+    try {
+        const { data, error } = await supabaseClient.from("kng_host_event_catalogue")
+            .select("id,name,active,sort_order").eq("active", true).order("sort_order").order("name");
+        if (error) throw error;
+        hostEventCatalogue = data || [];
+        hostEventCatalogueLoaded = true;
+    } catch (error) {
+        console.warn("Host event catalogue unavailable; using built-in list:", error);
+        hostEventCatalogue = [];
+        hostEventCatalogueLoaded = false;
+    }
+}
+
 function hostEventPool() {
-    return [
+    return hostEventCatalogueLoaded ? hostEventCatalogue.map(row => row.name) : [
         "Arena Annihilation","Bar Fight","BMX Sprint","Boxes","Breaks Are Gone","Buggy Blitz","Bumper Cars","Cargo FFA","Compound FFA","Cops & Robbers","Crossy Road","Dead Man's Dash","Dirty Derby","Dress to Impress","Factory of Fear","Family Fortunes","Find the Animal","Football Trivia","Fortune's Choice","Grand Prix","Guess the Song","Got-A-Reason","Go-Kart Race","Hide My Ride","Higher or Lower","Hide-or-Die Chicken Coop","Hide-or-Die Chinatown","Hide-or-Die Hospital","Hide-or-Die University","KNG Got Talent","KNG Trivia","Long Haul Championship","Monster Truck Gauntlet","Musical Cars","Musical Statues","Need for Speed","Phantoms vs Runners","Pop Quiz","Ramps","Rubber Dinghy Rapids","Sandy Seeking","Scavenger Hunt","Simon Says","Slippy Slide","Subway Surfers","Taxi Dash","Harbour Havoc","Would You Rather","Word War","Clown Survival","Deadman's Pit","Ghost Rider Rally","Haunted Hospital","Headless Horseman","Infected","Scrapyard Showdown","The Haunting Grounds","The Slasher","Chemist Clash","KNG Boxing"
     ];
 }
-function hostManualOnlyEvents() { return ["Club 77", "Vanilla"]; }
+function hostManualOnlyEvents() { return hostEventCatalogueLoaded ? [] : ["Club 77", "Vanilla"]; }
 function hostAllEventChoices() { return [...hostEventPool(), ...hostManualOnlyEvents()]; }
 function hostTimeToMinutes(value) { const [h,m] = String(value || "00:00").split(":").map(Number); return (h * 60) + m; }
 function hostMinutesToTime(minutes) { const h = Math.floor(minutes / 60) % 24; const m = minutes % 60; return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
@@ -3339,7 +3536,7 @@ function hostSlotOccupied(date, start, end, ignoreId = null) {
     const s = hostTimeToMinutes(start), e = hostTimeToMinutes(end);
     return (allEvents || []).some(ev => {
         if (ignoreId && String(ev.id) === String(ignoreId)) return false;
-        if (ev.event_date !== date || ev.status === "cancelled" || ev.is_meeting === true) return false;
+        if (ev.event_date !== date || ev.status === "cancelled" || ev.is_meeting === true || String(ev.workspace || "interactions").toLowerCase() === "actions") return false;
         const es = hostTimeToMinutes(ev.start_time), ee = hostTimeToMinutes(ev.end_time);
         return es < e && ee > s;
     });
@@ -3349,12 +3546,135 @@ function hostTypeIdFor(title) {
     if (lower === "club 77" || lower === "vanilla") return eventTypes.find(t => String(t.name||"").toLowerCase() === "party")?.id || eventTypes.find(t => String(t.name||"").toLowerCase() === "event")?.id;
     return eventTypes.find(t => String(t.name||"").toLowerCase() === "event")?.id || eventTypes[0]?.id;
 }
+
+function openEventCatalogueManager() {
+    if (!canManage()) return;
+    const eventRows = hostAllEventChoices().map(name => `<div class="catalogue-row"><span>${escapeHtml(name)}</span><button class="mini-btn danger" onclick="removeHostCatalogueItem('${escapeAttribute(name)}')">Remove</button></div>`).join("");
+    showModal(`<div class="modal catalogue-manager-modal"><div class="modal-header"><div><span class="modal-eyebrow">INTERACTIONS · ADM+</span><h2>Scheduled Activity Catalogue</h2><small>Manage the named activities available in Host an Event.</small></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <section class="ops-card"><div class="ops-card-head"><h3>Scheduled activities</h3><span class="ops-pill">${hostAllEventChoices().length} names</span></div>
+        <form id="addHostCatalogueForm" class="ops-form"><label>Add activity name<input name="name" maxlength="100" placeholder="e.g. New activity name" required></label><button class="primary-button">Add activity</button></form>
+        <div class="catalogue-list">${eventRows || '<div class="ops-empty">No activities configured.</div>'}</div>
+      </section>
+      <p class="ops-subtle">Removing an activity only removes it from future scheduling choices. Existing scheduled entries and leaderboard history are retained.</p></div>`);
+    document.getElementById("addHostCatalogueForm")?.addEventListener("submit", async e => {
+        e.preventDefault(); const name = String(new FormData(e.target).get("name") || "").trim();
+        if (!name) return;
+        if (hostAllEventChoices().some(x => x.toLowerCase() === name.toLowerCase())) return alert("That activity is already in the list.");
+        const { error } = await supabaseClient.from("kng_host_event_catalogue").insert({name,active:true,sort_order:hostAllEventChoices().length+1});
+        if (error) return alert(error.message);
+        await loadHostEventCatalogue(); closeModal(); render();
+    });
+}
+async function syncActionTypeToEventType(name, colour="#2878d0") {
+    const {error}=await supabaseClient.from("event_types").upsert(
+        {name,colour,description:"KNG Actions event type"},
+        {onConflict:"name"}
+    );
+    return error;
+}
+function openActionCatalogueManager() {
+    if (!canManage()) return;
+    const rows = allActionTypes("action").sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+    const actionRows = rows.map(row => `<div class="catalogue-row action-catalogue-row ${row.active===false?'is-inactive':''}">
+        <form class="action-catalogue-edit" onsubmit="saveActionCatalogueName(event,'${escapeAttribute(row.id)}')">
+          <input name="name" maxlength="100" value="${escapeAttribute(row.name)}" aria-label="Action name" required>
+          <span class="catalogue-status ${row.active===false?'inactive':'active'}">${row.active===false?'INACTIVE':'ACTIVE'}</span>
+          <button class="mini-btn" type="submit">Save</button>
+          ${row.active===false
+            ? `<button class="mini-btn catalogue-reactivate" type="button" onclick="setActionCatalogueActive('${escapeAttribute(row.id)}',true)">Restore</button>`
+            : `<button class="mini-btn danger" type="button" onclick="setActionCatalogueActive('${escapeAttribute(row.id)}',false)">Remove</button>`}
+        </form>
+      </div>`).join("");
+    showModal(`<div class="modal catalogue-manager-modal action-catalogue-modal"><div class="modal-header"><div><span class="modal-eyebrow">ACTIONS · ADM+</span><h2>Action Names Catalogue</h2><small>Manage the action types available in Host an Action and the Actions Tracker.</small></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <section class="ops-card"><div class="ops-card-head"><h3>Action types</h3><span class="ops-pill">${actionTypes("action").length} active</span></div>
+        <form id="addActionCatalogueForm" class="ops-form action-catalogue-add"><label>Add action name<input name="name" maxlength="100" placeholder="e.g. New action type" required></label><button class="primary-button">Add action</button></form>
+        <div class="catalogue-list">${actionRows || '<div class="ops-empty">No action types configured.</div>'}</div>
+      </section>
+      <p class="ops-subtle">Renaming changes the available catalogue label. Removing a name hides it from future selections but preserves existing tracker records. Removed names can be restored.</p></div>`);
+    document.getElementById("addActionCatalogueForm")?.addEventListener("submit", async e => {
+        e.preventDefault();
+        const name = String(new FormData(e.target).get("name") || "").trim();
+        if (!name) return;
+        const existing = allActionTypes("action").find(x => String(x.name).toLowerCase() === name.toLowerCase());
+        if (existing) {
+            if (existing.active === false) {
+                const {error}=await supabaseClient.from("kng_action_types").update({active:true}).eq("id",existing.id);
+                if(error) return alert(error.message);
+                await loadActionData(); openActionCatalogueManager(); return;
+            }
+            return alert("That action name is already active.");
+        }
+        const { error } = await supabaseClient.from("kng_action_types").insert({kind:"action",name,active:true,colour:"#2878d0"});
+        if (error) return alert(error.message);
+        const syncError=await syncActionTypeToEventType(name,"#2878d0");
+        await loadActionData();
+        if(syncError) { openActionCatalogueManager(); return alert(`Action name saved, but its schedule event type could not be synced: ${syncError.message}`); }
+        await loadEvents(); openActionCatalogueManager();
+    });
+}
+async function saveActionCatalogueName(event,id) {
+    event.preventDefault();
+    if (!canManage()) return;
+    const name=String(new FormData(event.currentTarget).get("name")||"").trim();
+    if(!name) return;
+    const duplicate=allActionTypes("action").find(x=>String(x.id)!==String(id)&&String(x.name).toLowerCase()===name.toLowerCase());
+    if(duplicate) return alert("An action with that name already exists.");
+    const oldName=allActionTypes("action").find(x=>String(x.id)===String(id))?.name;
+    const {error}=await supabaseClient.from("kng_action_types").update({name}).eq("id",id).eq("kind","action");
+    if(error) return alert(error.message);
+    if(oldName) {
+        const {error:syncError}=await supabaseClient.from("event_types").update({name}).eq("name",oldName);
+        if(syncError) { await loadActionData(); openActionCatalogueManager(); return alert(`Action name updated, but the shared schedule event type could not be renamed: ${syncError.message}`); }
+    }
+    await loadActionData(); await loadEvents(); openActionCatalogueManager();
+}
+async function setActionCatalogueActive(id,active) {
+    if (!canManage()) return;
+    const row=allActionTypes("action").find(x=>String(x.id)===String(id));
+    if(!row) return;
+    if(!active && !confirm(`Remove "${row.name}" from future action selections? Existing tracker records will remain unchanged.`)) return;
+    const {error}=await supabaseClient.from("kng_action_types").update({active}).eq("id",id).eq("kind","action");
+    if(error) return alert(error.message);
+    await loadActionData(); openActionCatalogueManager();
+}
+
+function openBrCatalogueManager() {
+    if (!canManage()) return;
+    const brRows = actionTypes("br").map(row => `<div class="catalogue-row"><span>${escapeHtml(row.name)}</span><button class="mini-btn danger" onclick="removeBrCatalogueItem('${escapeAttribute(row.id)}')">Remove</button></div>`).join("");
+    showModal(`<div class="modal catalogue-manager-modal"><div class="modal-header"><div><span class="modal-eyebrow">ACTIONS · ADM+</span><h2>Battle Royale Catalogue</h2><small>Manage the named BR formats available in the BR Tracker.</small></div><button class="modal-close" onclick="closeModal()">×</button></div>
+      <section class="ops-card"><div class="ops-card-head"><h3>Battle Royale formats</h3><span class="ops-pill">${actionTypes("br").length} names</span></div>
+        <form id="addBrCatalogueForm" class="ops-form"><label>Add BR name<input name="name" maxlength="100" placeholder="e.g. New BR format" required></label><button class="primary-button">Add BR</button></form>
+        <div class="catalogue-list">${brRows || '<div class="ops-empty">No BR names configured.</div>'}</div>
+      </section>
+      <p class="ops-subtle">Removing a BR only removes it from future tracker choices. Existing tracker records and history are retained.</p></div>`);
+    document.getElementById("addBrCatalogueForm")?.addEventListener("submit", async e => {
+        e.preventDefault(); const name = String(new FormData(e.target).get("name") || "").trim();
+        if (!name) return;
+        if (actionTypes("br").some(x => x.name.toLowerCase() === name.toLowerCase())) return alert("That BR name is already in the list.");
+        const { error } = await supabaseClient.from("kng_action_types").insert({kind:"br",name,active:true,colour:"#315f9b"});
+        if (error) return alert(error.message);
+        await loadActionData(); closeModal(); render();
+    });
+}
+async function removeHostCatalogueItem(name) {
+    if (!canManage() || !confirm(`Remove "${name}" from the future event dropdown? Existing scheduled events will remain.`)) return;
+    const { error } = await supabaseClient.from("kng_host_event_catalogue").update({active:false}).eq("name",name);
+    if (error) return alert(error.message);
+    await loadHostEventCatalogue(); closeModal(); render();
+}
+async function removeBrCatalogueItem(id) {
+    if (!canManage() || !confirm("Remove this BR name from future dropdowns? Existing tracker records will remain.")) return;
+    const { error } = await supabaseClient.from("kng_action_types").update({active:false}).eq("id",id);
+    if (error) return alert(error.message);
+    await loadActionData(); closeModal(); render();
+}
+
 function renderHostEventPlanner() {
     const date = hostPlannerDate || formatDate(new Date());
-    const todayEvents = (allEvents || []).filter(e => e.event_date === date && e.status !== "cancelled").sort((a,b)=>String(a.start_time).localeCompare(String(b.start_time)));
+    const todayEvents = (allEvents || []).filter(e => e.event_date === date && e.status !== "cancelled" && String(e.workspace || "interactions").toLowerCase() !== "actions").sort((a,b)=>String(a.start_time).localeCompare(String(b.start_time)));
     const canEdit = canManage();
     return `${opsErrorNotice("host-event")}
-        <div class="host-event-toolbar"><div><span class="host-eyebrow">KNG ENTERTAINMENT</span><h2>Host an Event</h2><p>Build the schedule, protect planned slots, then change anything manually when the schedule inevitably develops opinions.</p></div>${canEdit ? `<div class="host-toolbar-buttons"><button class="primary-button" onclick="randomiseHostSchedule()">🎲 Randomise Empty Slots</button><button class="secondary-button" onclick="toggleHostPanel('plannedHostPanel')">📅 Add Planned Event</button><button class="secondary-button" onclick="toggleHostPanel('manualHostPanel')">➕ Add Event</button></div>` : ""}</div>
+        <div class="host-event-toolbar"><div><span class="host-eyebrow">KNG ENTERTAINMENT</span><h2>Host an Event</h2><p>Build the schedule, protect planned slots, then change anything manually when the schedule inevitably develops opinions.</p></div>${canEdit ? `<div class="host-toolbar-buttons"><button class="secondary-button" onclick="openEventCatalogueManager()">⚙ Manage Activity Names</button><button class="primary-button" onclick="randomiseHostSchedule()">🎲 Randomise Empty Slots</button><button class="secondary-button" onclick="toggleHostPanel('plannedHostPanel')">📅 Add Planned Event</button><button class="secondary-button" onclick="toggleHostPanel('manualHostPanel')">➕ Add Event</button></div>` : ""}</div>
         <div id="plannedHostPanel" class="host-control-panel" hidden><div class="host-control-head"><div><b>Planned / Protected Event</b><small>Daily, weekly or biweekly events lock their slots so the randomiser cannot fill them.</small></div><button class="secondary-button small" onclick="toggleHostPanel('plannedHostPanel')">Close</button></div><form id="plannedHostForm" class="host-form-grid"><input name="title" maxlength="120" placeholder="Event name" required><select name="type_id" required>${eventTypes.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("")}</select><input name="event_date" type="date" value="${date}" required><input name="start_time" type="time" value="18:00" required><input name="end_time" type="time" value="18:30" required><select name="repeat"><option value="none">One time</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="biweekly">Biweekly</option></select><input name="repeat_until" type="date" value="${formatDate(new Date(Date.now()+90*86400000))}" required><input name="description" maxlength="500" placeholder="Optional note"><button class="primary-button" type="submit">Create &amp; Protect Slot(s)</button></form><div id="plannedHostError" class="form-error"></div></div>
         <div id="manualHostPanel" class="host-control-panel" hidden><div class="host-control-head"><div><b>Manual Event</b><small>Club 77 and Vanilla are available here but are never chosen by the randomiser.</small></div><button class="secondary-button small" onclick="toggleHostPanel('manualHostPanel')">Close</button></div><form id="manualHostForm" class="host-form-grid"><select name="title" required>${hostAllEventChoices().map(x=>`<option value="${escapeAttribute(x)}">${escapeHtml(x)}</option>`).join("")}</select><input name="event_date" type="date" value="${date}" required><input name="start_time" type="time" value="18:00" required><input name="end_time" type="time" value="18:30" required><input name="description" maxlength="500" placeholder="Optional note"><label class="host-check"><input type="checkbox" name="locked"> Protect this slot from the randomiser</label><button class="primary-button" type="submit">Add Event</button></form><div id="manualHostError" class="form-error"></div></div>
         <div class="host-randomiser-card"><div><b>Randomiser</b><small>Only empty slots are filled. Existing events are never overwritten by the randomiser.</small></div><div class="host-randomiser-controls"><label class="host-date-label">View / randomise date<input id="hostRandomDate" type="date" value="${date}" onchange="setHostPlannerDate(this.value)"></label><input id="hostRandomStart" type="time" value="18:00"><input id="hostRandomEnd" type="time" value="23:30"><select id="hostRandomInterval"><option value="30">30 minute slots</option><option value="60">60 minute slots</option></select></div></div>
@@ -3390,7 +3710,11 @@ function hostRenderSlot(e) {
 
 async function claimHostSlot(id) {
     if (!currentUser || permissionRank() < 1) return alert("You must be signed in as KNG staff to claim an event.");
-    const { data, error } = await supabaseClient.rpc("claim_event_host_slot", { p_event_id: id, p_display_name: getKngDisplayName() });
+    let result = await supabaseClient.rpc("claim_event_host_slot", { p_event_id: id, p_display_name: getKngDisplayName() });
+    if (result.error && /function .*claim_event_host_slot.*(not found|schema cache)|could not find the function/i.test(result.error.message || "")) {
+        result = await supabaseClient.rpc("claim_event_host_slot", { p_event_id: id });
+    }
+    const { data, error } = result;
     if (error) return alert(error.message);
     if (data === false) return alert("That event has already been claimed by another staff member.");
     await loadEvents();
@@ -3410,9 +3734,9 @@ async function unclaimHostSlot(id) {
 
 function setHostPlannerDate(value){ if(!value)return; hostPlannerDate=value; try{localStorage.setItem("kng.hostPlannerDate",value);}catch(_){} render(); }
 function toggleHostPanel(id) { const el=document.getElementById(id); if(el) el.hidden=!el.hidden; }
-async function submitPlannedHostEvent(e){ e.preventDefault(); if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const d=Object.fromEntries(new FormData(e.target).entries()), err=document.getElementById("plannedHostError"); err.textContent=""; if(d.end_time<=d.start_time)return err.textContent="End time must be later than start time."; if(d.repeat!=="none"&&d.repeat_until<d.event_date)return err.textContent="Repeat until must be on or after the first date."; const dates=buildRecurringDates(d.event_date,d.repeat,d.repeat_until); const blocked=dates.filter(x=>hostSlotOccupied(x,d.start_time,d.end_time)); if(blocked.length)return err.textContent=`These dates already have an event in that slot: ${blocked.join(", ")}`; const group=dates.length>1?crypto.randomUUID():null; const rows=dates.map(x=>({title:d.title.trim(),event_type_id:d.type_id,event_date:x,start_time:d.start_time,end_time:d.end_time,description:d.description?.trim()||null,location:null,staff_required:0,visibility:"public",recurrence_group_id:group,recurrence_rule:d.repeat==="none"?null:d.repeat,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"planned",host_locked:true})); const {error}=await supabaseClient.from("events").insert(rows); if(error)return err.textContent=error.message; await writeAudit("host.planned_created",{title:d.title,dates,repeat:d.repeat}); await loadEvents(); render(); }
-async function submitManualHostEvent(e){ e.preventDefault(); if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const d=Object.fromEntries(new FormData(e.target).entries()), err=document.getElementById("manualHostError"); err.textContent=""; if(d.end_time<=d.start_time)return err.textContent="End time must be later than start time."; if(hostSlotOccupied(d.event_date,d.start_time,d.end_time))return err.textContent="That time slot already has an event. Edit the existing slot instead."; const typeId=hostTypeIdFor(d.title); if(!typeId)return err.textContent="No usable Event type exists in the database."; const payload={title:d.title,event_type_id:typeId,event_date:d.event_date,start_time:d.start_time,end_time:d.end_time,description:d.description?.trim()||null,location:null,staff_required:0,visibility:"public",recurrence_group_id:null,recurrence_rule:null,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"manual",host_locked:d.locked==="on"}; const {error}=await supabaseClient.from("events").insert(payload); if(error)return err.textContent=error.message; await writeAudit("host.manual_created",payload); await loadEvents(); render(); }
-async function randomiseHostSchedule(){ if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const date=document.getElementById("hostRandomDate")?.value,start=document.getElementById("hostRandomStart")?.value||"18:00",end=document.getElementById("hostRandomEnd")?.value||"23:30",interval=Math.max(30,Number(document.getElementById("hostRandomInterval")?.value||30)); if(!date||hostTimeToMinutes(end)<=hostTimeToMinutes(start))return alert("Choose a valid randomiser time range."); const typeId=hostTypeIdFor("Event"); if(!typeId)return alert("No Event type exists in the database."); const choices=hostEventPool(),rows=[]; let previous=""; for(let m=hostTimeToMinutes(start);m+interval<=hostTimeToMinutes(end);m+=interval){const a=hostMinutesToTime(m),b=hostMinutesToTime(m+interval);if(hostSlotOccupied(date,a,b))continue;const available=choices.filter(x=>x!==previous),title=available[Math.floor(Math.random()*available.length)];previous=title;rows.push({title,event_type_id:typeId,event_date:date,start_time:a,end_time:b,description:"Randomised by KNG Entertainment Host an Event",location:null,staff_required:0,visibility:"public",recurrence_group_id:null,recurrence_rule:null,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"random",host_locked:false});} if(!rows.length)return alert("There are no empty slots in that range to randomise."); const {error}=await supabaseClient.from("events").insert(rows); if(error)return alert(error.message); await writeAudit("host.randomised",{date,start,end,interval,created:rows.map(r=>r.title)}); await loadEvents(); render(); }
+async function submitPlannedHostEvent(e){ e.preventDefault(); if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const d=Object.fromEntries(new FormData(e.target).entries()), err=document.getElementById("plannedHostError"); err.textContent=""; if(d.end_time<=d.start_time)return err.textContent="End time must be later than start time."; if(d.repeat!=="none"&&d.repeat_until<d.event_date)return err.textContent="Repeat until must be on or after the first date."; const dates=buildRecurringDates(d.event_date,d.repeat,d.repeat_until); const blocked=dates.filter(x=>hostSlotOccupied(x,d.start_time,d.end_time)); if(blocked.length)return err.textContent=`These dates already have an event in that slot: ${blocked.join(", ")}`; const group=dates.length>1?crypto.randomUUID():null; const rows=dates.map(x=>({title:d.title.trim(),event_type_id:d.type_id,event_date:x,start_time:d.start_time,end_time:d.end_time,description:d.description?.trim()||null,location:null,staff_required:0,visibility:"public",recurrence_group_id:group,recurrence_rule:d.repeat==="none"?null:d.repeat,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"planned",host_locked:true,workspace:"interactions"})); const {error}=await supabaseClient.from("events").insert(rows); if(error)return err.textContent=error.message; await writeAudit("host.planned_created",{title:d.title,dates,repeat:d.repeat}); await loadEvents(); render(); }
+async function submitManualHostEvent(e){ e.preventDefault(); if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const d=Object.fromEntries(new FormData(e.target).entries()), err=document.getElementById("manualHostError"); err.textContent=""; if(d.end_time<=d.start_time)return err.textContent="End time must be later than start time."; if(hostSlotOccupied(d.event_date,d.start_time,d.end_time))return err.textContent="That time slot already has an event. Edit the existing slot instead."; const typeId=hostTypeIdFor(d.title); if(!typeId)return err.textContent="No usable Event type exists in the database."; const payload={title:d.title,event_type_id:typeId,event_date:d.event_date,start_time:d.start_time,end_time:d.end_time,description:d.description?.trim()||null,location:null,staff_required:0,visibility:"public",recurrence_group_id:null,recurrence_rule:null,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"manual",host_locked:d.locked==="on",workspace:"interactions"}; const {error}=await supabaseClient.from("events").insert(payload); if(error)return err.textContent=error.message; await writeAudit("host.manual_created",payload); await loadEvents(); render(); }
+async function randomiseHostSchedule(){ if(!canManage())return; const cooldown=enforceCooldown("event-create",30); if(cooldown)return alert(`Event creation is on a 30-second cooldown. Try again in ${cooldown}s.`); const date=document.getElementById("hostRandomDate")?.value,start=document.getElementById("hostRandomStart")?.value||"18:00",end=document.getElementById("hostRandomEnd")?.value||"23:30",interval=Math.max(30,Number(document.getElementById("hostRandomInterval")?.value||30)); if(!date||hostTimeToMinutes(end)<=hostTimeToMinutes(start))return alert("Choose a valid randomiser time range."); const typeId=hostTypeIdFor("Event"); if(!typeId)return alert("No Event type exists in the database."); const choices=hostEventPool(),rows=[]; let previous=""; for(let m=hostTimeToMinutes(start);m+interval<=hostTimeToMinutes(end);m+=interval){const a=hostMinutesToTime(m),b=hostMinutesToTime(m+interval);if(hostSlotOccupied(date,a,b))continue;const available=choices.filter(x=>x!==previous),title=available[Math.floor(Math.random()*available.length)];previous=title;rows.push({title,event_type_id:typeId,event_date:date,start_time:a,end_time:b,description:"Randomised by KNG Entertainment Host an Event",location:null,staff_required:0,visibility:"public",recurrence_group_id:null,recurrence_rule:null,status:"scheduled",is_meeting:false,created_by:currentUser.id,updated_by:currentUser.id,host_source:"random",host_locked:false,workspace:"interactions"});} if(!rows.length)return alert("There are no empty slots in that range to randomise."); const {error}=await supabaseClient.from("events").insert(rows); if(error)return alert(error.message); await writeAudit("host.randomised",{date,start,end,interval,created:rows.map(r=>r.title)}); await loadEvents(); render(); }
 function openHostEdit(id){ if(!canManage())return; const e=allEvents.find(x=>String(x.id)===String(id)); if(!e)return; const titleOptions=hostAllEventChoices().map(x=>`<option value="${escapeAttribute(x)}" ${x===e.title?"selected":""}>${escapeHtml(x)}</option>`).join(""); showModal(`<div class="modal"><div class="modal-header"><div><span class="modal-eyebrow">Host an Event</span><h2>Edit Event Slot</h2></div><button class="modal-close" onclick="closeModal()">×</button></div><form id="hostEditForm" class="ops-form"><label>Event<select name="title">${titleOptions}</select></label><label>Date<input name="event_date" type="date" value="${escapeAttribute(e.event_date)}" required></label><label>Start<input name="start_time" type="time" value="${escapeAttribute(String(e.start_time||"").slice(0,5))}" required></label><label>End<input name="end_time" type="time" value="${escapeAttribute(String(e.end_time||"").slice(0,5))}" required></label><label>Note<input name="description" maxlength="500" value="${escapeAttribute(e.description||"")}" placeholder="Optional note"></label><label class="host-check"><input type="checkbox" name="locked" ${e.host_locked||e.host_source==="planned"?"checked":""}> Protect this slot from randomiser</label><div id="hostEditError" class="form-error"></div><div class="modal-footer"><button type="button" class="secondary-button" onclick="closeModal()">Cancel</button><button type="button" class="danger-button" onclick="deleteHostEvent('${e.id}')">Delete</button><button type="submit" class="primary-button">Save Changes</button></div></form></div>`); document.getElementById("hostEditForm")?.addEventListener("submit",async ev=>{ev.preventDefault();const d=Object.fromEntries(new FormData(ev.target).entries()),err=document.getElementById("hostEditError");err.textContent="";if(d.end_time<=d.start_time)return err.textContent="End time must be later than start time.";if(hostSlotOccupied(d.event_date,d.start_time,d.end_time,e.id))return err.textContent="That new slot overlaps another event.";const typeId=hostTypeIdFor(d.title);const payload={title:d.title,event_type_id:typeId||e.event_type_id,event_date:d.event_date,start_time:d.start_time,end_time:d.end_time,description:d.description?.trim()||null,updated_by:currentUser.id,host_locked:d.locked==="on"};const {error}=await supabaseClient.from("events").update(payload).eq("id",e.id);if(error)return err.textContent=error.message;await writeAudit("host.slot_updated",{event_id:e.id,title:d.title,date:d.event_date,start:d.start_time,end:d.end_time});closeModal();await loadEvents();render();}); }
 async function deleteHostEvent(id){if(!canManage()||!confirm("Delete this event slot?"))return;const {error}=await supabaseClient.from("events").delete().eq("id",id);if(error)return alert(error.message);await writeAudit("host.slot_deleted",{event_id:id});closeModal();await loadEvents();render();}
 
@@ -3461,7 +3785,7 @@ function renderOpsPrizes() {
             <button class="integrated-nav-btn" onclick="document.getElementById('commandVault')?.scrollIntoView({behavior:'smooth'})">⌘ Commands</button>
         </div>
         <div class="ops-grid-two prize-page-grid">
-            ${canManage()?opsCard("Event Winner",`<form id="prizeWinPageForm" class="ops-form prize-win-page-form">
+            ${currentUser && permissionRank() >= 1 ? opsCard("Log an Event Prize",`<form id="prizeWinPageForm" class="ops-form prize-win-page-form">
                 <label>In-game ID<input name="discord_id" maxlength="50" placeholder="e.g. 33333" required></label>
                 <label>Type<select name="prize_id" required><option value="">Select prize type</option>${prizes.map(p=>`<option value="${p.id}">${escapeHtml(p.label)}${p.price ? ` · ${Number(p.price).toLocaleString()} city cash` : ''}</option>`).join("")}</select></label>
                 <label>Amount<input id="prizeWinAmount" name="amount" type="number" readonly placeholder="Auto-filled from type"></label>
@@ -3472,7 +3796,7 @@ function renderOpsPrizes() {
             </form>`):""}
             ${opsCard("Prize catalogue",prizes.length?`<div class="prize-grid">${prizes.map(p=>`<div class="prize-card"><span>${escapeHtml(p.label)}</span><b>${escapeHtml(p.code)}</b><strong>${p.price ? `${Number(p.price).toLocaleString()} city cash` : Number(p.amount||0).toLocaleString()}</strong><small>${escapeHtml(buildPrizeCommand(p,'ID','Reason'))}</small></div>`).join("")}</div><small>Choose a prize type. The complete command is generated automatically from the saved command template.</small>`:`<div class="ops-empty">No prize types configured. Run the migration to seed the event prizes and item commands.</div>`)}
         </div>
-        <div id="commandVault">${opsCard("Prize wins & command vault",wins.length?`<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>In-game ID</th><th>Prize</th><th>Reason</th><th>Command</th><th>Done</th><th>Won</th></tr></thead><tbody>${wins.map(w=>`<tr class="${w.completed?"prize-win-complete":""}"><td>${escapeHtml(w.discord_id||"Unknown")}</td><td>${escapeHtml(w.ops_prizes?.label||"Prize")}</td><td>${escapeHtml(w.reason||"")}</td><td><code class="command-code">${escapeHtml(w.command||"")}</code></td><td><label class="prize-done"><input type="checkbox" class="prize-done-toggle" data-id="${w.id}" ${w.completed?"checked":""}><span>${w.completed?"Done":"Pending"}</span></label></td><td>${formatOpsDateTime(w.created_at)}</td></tr>`).join("")}</tbody></table></div>`:`<div class="ops-empty">No prize wins recorded yet.</div>`)}</div>`;
+        <div id="commandVault">${opsCard("Prize wins & command vault",wins.length?`<div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>In-game ID</th><th>Prize</th><th>Reason</th><th>Command</th><th>Done</th><th>Won</th></tr></thead><tbody>${wins.map(w=>`<tr class="${w.completed?"prize-win-complete":""}"><td>${escapeHtml(w.discord_id||"Unknown")}</td><td>${escapeHtml(w.ops_prizes?.label||"Prize")}</td><td>${escapeHtml(w.reason||"")}</td><td><code class="command-code">${escapeHtml(w.command||"")}</code></td><td>${canManage()?`<label class="prize-done"><input type="checkbox" class="prize-done-toggle" data-id="${w.id}" ${w.completed?"checked":""}><span>${w.completed?"Done":"Pending"}</span></label>`:`<span class="ops-pill">${w.completed?"Done":"Pending"}</span>`}</td><td>${formatOpsDateTime(w.created_at)}</td></tr>`).join("")}</tbody></table></div>`:`<div class="ops-empty">No prize wins recorded yet.</div>`)}</div>`;
 }
 
 function bindOpsHandlers() {
@@ -3651,7 +3975,7 @@ function bindPrizePageHandlers(){
 }
 async function submitPrizeWinPage(e){
     e.preventDefault();
-    if(!canManage())return;
+    if(!currentUser || permissionRank() < 1)return;
     const form=e.target,data=new FormData(form);
     const discord_id=String(data.get("discord_id")||"").trim();
     const reason=String(data.get("reason")||"").trim();
@@ -3826,7 +4150,8 @@ function renderInteractionView() {
         "actions-dashboard":["Actions Dashboard","Your Actions assignments, activity and upcoming work"]
     };
     const [title,subtitle]=titles[ixView] || titles["command-dashboard"];
-    app.innerHTML=`<div class="schedule-app operations-app ix-integration-app">${interactionHeader(title,subtitle)}<div class="app-body operations-body">${operationsNavHtml()}<main class="operations-main"><div class="operations-content">${renderIxViewHtml()}</div></main></div><div id="modalContainer"></div></div>`;
+    const actionsTheme = currentWorkspaceView() === "actions" || (!canSwitchTeamWorkspace() && getCurrentEntertainmentTeam() === "actions");
+    app.innerHTML=`<div class="schedule-app operations-app ix-integration-app ${actionsTheme ? "actions-theme" : ""}">${interactionHeader(title,subtitle)}<div class="app-body operations-body">${operationsNavHtml()}<main class="operations-main"><div class="operations-content">${renderIxViewHtml()}</div></main></div><div id="modalContainer"></div></div>`;
     bindInteractionHandlers();
 }
 
@@ -3880,47 +4205,77 @@ function renderInteractionDashboard(){
 function ixPanel(title,body,action=""){ return `<section class="ix-panel"><div class="ix-panel-head"><div><h3>${escapeHtml(title)}</h3></div>${action}</div>${body}</section>`; }
 
 function renderInteractionLeaderboard(){
-    const hosted=new Map();
-    const names=new Map();
-    for(const e of (allEvents||[])){
-        const id=String(e.host_claimed_by||'').trim();
-        if(!id) continue;
-        const key=id;
-        hosted.set(key,(hosted.get(key)||0)+1);
+    // Only currently active staff can appear. Resolve event references against
+    // the active staff directory using staff UUID, linked auth UUID or Discord ID.
+    const activeStaff = (staff || []).filter(person => person && person.active !== false && person.id);
+    const staffByReference = new Map();
+    for (const person of activeStaff) {
+        for (const key of [person.id, person.user_id, person.discord_id]) {
+            if (key !== null && key !== undefined && String(key).trim()) {
+                staffByReference.set(String(key).trim(), person);
+            }
+        }
+    }
+    const hostedCounts = new Map();
+    const completedHostedEvents = (allEvents || []).filter(event =>
+        !event.is_meeting && event.status !== "cancelled" && isEventCompleted(event)
+    );
+    for (const event of completedHostedEvents) {
+        const participants = new Set();
+        const addCurrentStaff = value => {
+            if (value === null || value === undefined) return;
+            const person = staffByReference.get(String(value).trim());
+            if (person) participants.add(String(person.id));
+        };
+        addCurrentStaff(event.host_claimed_by);
+        addCurrentStaff(event.host_claimed_discord);
+        for (const allocation of (event.event_staff || [])) {
+            addCurrentStaff(allocation?.staff_id);
+            addCurrentStaff(allocation?.user_id);
+            addCurrentStaff(allocation?.discord_id);
+        }
+        for (const staffId of participants) {
+            hostedCounts.set(staffId, (hostedCounts.get(staffId) || 0) + 1);
+        }
+    }
+    const hostedRows = [...hostedCounts.entries()]
+        .map(([id,total]) => ({
+            id, total,
+            name: activeStaff.find(person => String(person.id) === id)?.name || "Current staff"
+        }))
+        .sort((a,b) => b.total-a.total || a.name.localeCompare(b.name));
 
-        // Leaderboards must use the KNG roster display name, never the
-        // Discord username captured when the event slot was claimed.
-        const discordId=String(e.host_claimed_discord||'').trim();
-        const rosterMember=(rosterData||[]).find(r =>
-            String(r.staff?.discord_id||r.discord_id||'').trim()===discordId ||
-            String(r.staff_id||r.staff?.id||'')===String(e.host_claimed_staff_id||'')
-        );
-        const staffMember=(staff||[]).find(s =>
-            (discordId && String(s.discord_id||'').trim()===discordId) ||
-            String(s.id||'')===String(e.host_claimed_staff_id||'')
-        );
-        const rosterName=String(rosterMember?.display_name||rosterMember?.staff?.name||staffMember?.name||'').trim();
-        names.set(key, rosterName || 'Not on roster');
+    // Popularity uses the exact event choices shown in Host an Event > Add Event.
+    const catalogue = (typeof hostAllEventChoices === "function" ? hostAllEventChoices() : [])
+        .map(name => String(name || "").trim()).filter(Boolean);
+    const typeMap = new Map(catalogue.map(name => [name.toLocaleLowerCase(), {name, total:0, count:0}]));
+    for (const event of (allEvents || [])) {
+        if (event.is_meeting || !isEventCompleted(event)) continue;
+        const attendance = Number(event.attendance_count);
+        if (event.attendance_count === null || event.attendance_count === undefined || !Number.isFinite(attendance) || attendance < 0) continue;
+        const group = typeMap.get(String(event.title || "").trim().toLocaleLowerCase());
+        if (group) { group.total += attendance; group.count += 1; }
     }
-    const hostedRows=[...hosted.entries()].sort((a,b)=>b[1]-a[1]).map(([id,total])=>({id,total,name:names.get(id)||'Not on roster'}));
-    const pointMap=new Map();
-    for(const p of (ops.points||[]).filter(x=>String(x.team||'interactions').toLowerCase()==='interactions')){
-        const id=String(p.staff_id||p.user_id||'').trim();
-        if(!id) continue;
-        pointMap.set(id,(pointMap.get(id)||0)+Number(p.amount||0));
-    }
-    const pointRows=[...pointMap.entries()].sort((a,b)=>b[1]-a[1]).map(([id,total])=>({id,total,name:staff.find(s=>String(s.id)===id)?.name||'Staff'}));
-    const activityMap=new Map();
-    for(const x of (ops.tracker||[])){
-        const id=String(x.staff_id||'').trim();
-        if(!id) continue;
-        activityMap.set(id,(activityMap.get(id)||0)+1);
-    }
-    const activityRows=[...activityMap.entries()].sort((a,b)=>b[1]-a[1]).map(([id,total])=>({id,total,name:staff.find(s=>String(s.id)===id)?.name||'Staff'}));
-    const rows=(list,label,unit)=>list.length?`<div class="ix-table">${list.slice(0,10).map((r,i)=>`<div class="ix-table-row"><span class="ix-rank">#${i+1}</span><div class="ix-grow"><b>${escapeHtml(r.name)}</b></div><span><b>${r.total}</b><small>${unit}</small></span></div>`).join('')}</div>`:`<div class="ix-empty">No ${escapeHtml(label.toLowerCase())} recorded yet.</div>`;
-    return `<div class="ix-leaderboard-page"><div class="ix-two-col leaderboard-sections"><div class="ix-panel"><div class="ix-panel-head"><div><h3>Most Events Hosted</h3><small>Staff with the most claimed event slots</small></div></div>${rows(hostedRows,'hosted events','events hosted')}</div><div class="ix-panel"><div class="ix-panel-head"><div><h3>Most Points</h3><small>Highest staff point totals</small></div></div>${rows(pointRows,'points','points')}</div><div class="ix-panel"><div class="ix-panel-head"><div><h3>Most Activity</h3><small>Logged KNG activity</small></div></div>${rows(activityRows,'activity','activities')}</div></div><section class="ix-panel ix-team-points-leaderboard"><div class="ix-panel-head"><div><h3>Interactions Team Points Leaderboard</h3><small>Individual points awarded to Interactions staff, highest total first</small></div><span class="ix-pill">Interactions</span></div>${renderTeamPointsLeaderboard('interactions')}</section></div>`;
+    const popularEvents = [...typeMap.values()].filter(x => x.count > 0)
+        .map(x => ({...x, average:x.total/x.count}))
+        .sort((a,b) => b.average-a.average || b.count-a.count || a.name.localeCompare(b.name));
+    const eventRows = popularEvents.length
+        ? `<div class="ix-table">${popularEvents.map((event,i)=>`<div class="ix-table-row"><span class="ix-rank">#${i+1}</span><div class="ix-grow"><b>${escapeHtml(event.name)}</b><small>${event.count} completed ${event.count===1?'event':'events'} · ${event.total} attendees in total</small></div><span><b>${event.average.toFixed(1)}</b><small>average attendance</small></span></div>`).join('')}</div>`
+        : `<div class="ix-empty">No completed events from the Host an Event catalogue have attendance figures recorded yet.</div>`;
+    const hostedHtml = hostedRows.length
+        ? `<div class="ix-table">${hostedRows.slice(0,50).map((person,i)=>`<div class="ix-table-row"><span class="ix-rank">#${i+1}</span><div class="ix-grow"><b>${escapeHtml(person.name)}</b><small>Host or helper on completed events</small></div><span><b>${person.total}</b><small>events hosted</small></span></div>`).join('')}</div>`
+        : `<div class="ix-empty">No completed events credited to current staff yet.</div>`;
+    return `<div class="ix-leaderboard-page">
+        <section class="ix-panel ix-team-points-leaderboard">
+            <div class="ix-panel-head"><div><h3>Most Events Hosted</h3><small>Current staff only · Hosts and allocated helpers receive equal credit</small></div><span class="ix-pill">Hosting leaderboard</span></div>
+            ${hostedHtml}
+        </section>
+        <section class="ix-panel ix-popular-events">
+            <div class="ix-panel-head"><div><h3>Most Popular Events</h3><small>Scheduled event choices ranked by average attendance per completed event</small></div><span class="ix-pill">Average attendance</span></div>
+            ${eventRows}
+        </section>
+    </div>`;
 }
-
 function renderAnnouncements(){ return ''; }
 
 // Community suggestion moderation: normalize text so simple obfuscation like
@@ -3988,7 +4343,7 @@ function renderHallOfFame(){
           <div class="ix-panel-head"><div><h3>Hall of Fame</h3><small>Build the winner card exactly like the KNG frame.</small></div></div>
           <div class="hof-control-section"><b>Frame Library</b><div class="ix-frame-grid hof-frame-grid">${frames.map(f=>`<button class="ix-frame-chip hof-frame-chip ${selected===f.key?'active':''}" data-hof-frame="${f.key}" onclick="selectHofFrame('${f.key}')">${escapeHtml(f.name)}</button>`).join('')}</div></div>
           <label>Winner name<input id="hofWinnerName" list="hofStaffNames" value="${escapeHtml(current.winner_name||'')}" placeholder="Type winner name"><datalist id="hofStaffNames">${(staff||[]).map(x=>`<option value="${escapeAttribute(x.name||'')}"></option>`).join('')}</datalist></label><label>Winner Discord ID<input id="hofWinnerDiscordId" value="${escapeAttribute(current.winner_discord_id||'')}" placeholder="Enter Discord ID instead (optional)"></label>
-          <div class="hof-photo-actions">${canManage()?`<button class="header-button" onclick="openHofUpload()">Add winner photo</button><button class="header-button danger-button" onclick="removeHofPhoto()">Remove photo</button>`:''}<button class="header-button" onclick="resetHofPhoto()">Reset photo position</button></div>
+          <div class="hof-photo-actions">${currentUser && permissionRank() >= 1 ? `<button class="header-button" onclick="openHofUpload()">Add winner photo</button>` : ''}${canManage()?`<button class="header-button danger-button" onclick="removeHofPhoto()">Remove photo</button>`:''}<button class="header-button" onclick="resetHofPhoto()">Reset photo position</button></div>
           <div class="hof-colour-panel" id="hofCustomControls">
             <div class="hof-colour-top"><div class="hof-colour-swatch" id="hofColourSwatch" style="background:${escapeAttribute(colour)}" onclick="document.getElementById('hofColour')?.click()"></div><input id="hofHex" class="hof-hex-input" value="${escapeAttribute(colour.toUpperCase())}" maxlength="7" aria-label="Hex colour" oninput="applyHofHex(this.value)"><span id="hofRgb" class="hof-rgb">${escapeHtml(hofRgbLabel(colour))}</span></div>
             <label class="hof-range-label"><span>Hue</span><input id="hofHue" type="range" min="0" max="359" value="${hofHueFromHex(colour)}" oninput="applyHofHue(this.value)"><small id="hofHueValue">${hofHueFromHex(colour)}°</small></label>
@@ -3997,7 +4352,7 @@ function renderHallOfFame(){
             <input id="hofColour" type="color" value="${escapeAttribute(colour)}" oninput="applyHofCustomColour(this.value)" style="position:absolute;left:-9999px;opacity:0;pointer-events:none">
           </div>
           <div class="hof-help">Drag the winner photo inside the black box. Scroll to zoom.</div>
-          <div class="hof-action-row">${canManage()?`<button class="primary-button" onclick="saveHallOfFame()">Save Winner</button>`:""}<button class="header-button" onclick="downloadHallOfFame()">Download</button></div>
+          <div class="hof-action-row">${currentUser && permissionRank() >= 1 ? `<button class="primary-button" onclick="saveHallOfFame()">Save Winner</button>` : ""}<button class="header-button" onclick="downloadHallOfFame()">Download</button></div>
         </div>
       </div>
     </div>`;
@@ -4109,7 +4464,7 @@ function bindHofPhotoControls(){
     win.onwheel=e=>{ if(!img.src)return;e.preventDefault();const current=parseFloat(img.style.getPropertyValue('--hof-scale'))||1;const next=Math.max(.5,Math.min(3,current+(e.deltaY<0?.08:-.08)));img.style.setProperty('--hof-scale',next); };
 }
 async function saveHallOfFame(){
-    if(!canManage())return;
+    if(!currentUser || permissionRank() < 1) return alert('A KNG staff account is required to submit a Hall of Fame entry.');
     let winner_name=document.getElementById('hofWinnerName')?.value.trim();
     const winner_discord_id=document.getElementById('hofWinnerDiscordId')?.value.trim() || '';
     let winnerStaff=(staff||[]).find(x => (winner_discord_id && String(x.discord_id||'')===winner_discord_id) || (winner_name && String(x.name||'').toLowerCase()===winner_name.toLowerCase()));
@@ -4147,7 +4502,7 @@ async function downloadHallOfFame(){
     const a=document.createElement('a');a.download=`KNG-Hall-of-Fame-${(document.getElementById('hofWinnerName')?.value||'Winner').replace(/[^a-z0-9_-]+/gi,'-')}.png`;a.href=canvas.toDataURL('image/png');a.click();
 }
 function openHofUpload(){
-    if(!canManage()) return; const input=document.createElement('input'); input.type='file'; input.accept='image/*';
+    if(!currentUser || permissionRank() < 1) return alert('A KNG staff account is required to upload a Hall of Fame photo.'); const input=document.createElement('input'); input.type='file'; input.accept='image/*';
     input.onchange=async()=>{ const file=input.files?.[0]; if(!file)return; const ext=(file.name.split('.').pop()||'jpg').toLowerCase(); const path=`${currentUser.id}/${Date.now()}.${ext}`; const {error}=await supabaseClient.storage.from('kng-hall-of-fame').upload(path,file,{upsert:false,contentType:file.type}); if(error)return alert(error.message); const {data}=supabaseClient.storage.from('kng-hall-of-fame').getPublicUrl(path); const old=document.getElementById('hofPhotoWindow'); if(old){old.innerHTML=`<img id="hofWinnerPhoto" class="hof-winner-photo" src="${escapeHtml(data.publicUrl)}" alt="Winner" style="--hof-scale:1;--hof-x:0px;--hof-y:0px">`;bindHofPhotoControls();} };
     input.click();
 }
@@ -4168,17 +4523,19 @@ async function loadActionData(){
         load('action_br_tracker',()=>supabaseClient.from('kng_action_br_tracker').select('*').order('event_date',{ascending:false}).order('created_at',{ascending:false}).limit(300)),
         load('action_log',()=>supabaseClient.from('kng_action_logs').select('*, staff:staff_id(id,name,discord_id)').order('created_at',{ascending:false}).limit(500)),
         load('action_goals',()=>supabaseClient.from('kng_action_goals').select('*').order('goal_month',{ascending:false}).limit(24)),
-        load('action_types',()=>supabaseClient.from('kng_action_types').select('*').eq('active',true).order('kind').order('name'))
+        load('action_types',()=>supabaseClient.from('kng_action_types').select('*').order('kind').order('name'))
     ]);
     actionData={tracker,br,logs,goals,types};
 }
 
-function actionTypes(kind){ return (actionData.types||[]).filter(t=>!kind||t.kind===kind); }
+function allActionTypes(kind){ return (actionData.types||[]).filter(t=>!kind||t.kind===kind); }
+function actionTypes(kind){ return allActionTypes(kind).filter(t=>t.active!==false); }
 function actionTypeOptions(kind, selected=''){
     return actionTypes(kind).map(t=>`<option value="${escapeAttribute(t.name)}" ${String(t.name)===String(selected)?'selected':''}>${escapeHtml(t.name)}</option>`).join('');
 }
 function actionErrorNotice(key){ const e=actionLoadErrors[key]; return e?`<div class="ops-notice warning">${escapeHtml(key)} is not available yet. Run <code>KNG-ACTIONS-WORKSPACE-PATCH.sql</code>. <small>${escapeHtml(e)}</small></div>`:''; }
 function actionStaffNames(){ return staff.map(s=>s.name).filter(Boolean); }
+function actionOrganisationNames(){ const names=new Map(); for(const row of (actionData.tracker||[])){ for(const value of [row.org1,row.org2]){ const name=String(value||'').trim(); if(name) names.set(name.toLowerCase(),name); } } return [...names.values()].sort((a,b)=>a.localeCompare(b)); }
 function parseAttendees(value){ return String(value||'').split(/[,\n]/).map(x=>x.trim()).filter(Boolean); }
 function actionMonthKey(date=new Date()){ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`; }
 function actionDateLabel(d){ const dt=new Date(`${String(d).slice(0,10)}T00:00:00`); return Number.isNaN(dt.getTime())?String(d||''):dt.toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'2-digit'}); }
@@ -4187,7 +4544,7 @@ function actionEventTypesForForm(){ return actionTypes('action'); }
 function renderHostAction(){
     if(!canUseTeam('actions')) return `<div class="ix-panel"><div class="ix-empty">Actions workspace access required.</div></div>`;
     const options=actionEventTypesForForm();
-    return `<div class="action-page"><section class="actions-dashboard-hero"><div><span class="host-eyebrow">ACTIONS WORKSPACE</span><h2>Host an Action</h2><p>Submit an Actions event. Members can submit; AUX+ can approve it and place it onto the shared KNG schedule.</p></div><div class="actions-dashboard-badge">🎯 ACTION</div></section>
+    return `<div class="action-page"><section class="actions-dashboard-hero"><div><span class="host-eyebrow">ACTIONS WORKSPACE</span><h2>Host an Action</h2><p>Submit an Actions event. Members can submit; AUX+ can approve it and place it onto the shared KNG schedule.</p></div><div class="actions-dashboard-badge">🎯 ACTION</div>${canManage()?`<button class="secondary-button" onclick="openActionCatalogueManager()">⚙ Manage Action Names</button>`:""}</section>
     <div class="ops-grid-two"><section class="ops-card"><div class="ops-card-head"><h3>Submit an Action</h3><span class="ops-subtle">Approval required</span></div><form id="actionSubmissionForm" class="ops-form"><label>Action type<select name="type" required><option value="">Select action</option>${options.map(t=>`<option value="${escapeAttribute(t.name)}">${escapeHtml(t.name)}</option>`).join('')}</select></label><label>Title<input name="title" maxlength="120" placeholder="e.g. Humane Labs" required></label><div class="form-grid"><label>Date<input type="date" name="event_date" value="${formatDate(new Date())}" required></label><label>Start<input type="time" name="start_time" value="19:00" required></label><label>End<input type="time" name="end_time" value="20:00" required></label></div><label>Notes<textarea name="description" rows="4" maxlength="1000" placeholder="Staff notes, location, requirements..."></textarea></label><button class="primary-button">Submit for Approval</button><small>All staff levels can submit. AUX, ADM, Management and Directors can approve.</small></form></section>
     <section class="ops-card"><div class="ops-card-head"><h3>Approval Queue</h3><span class="ops-pill">${canApproveEvents()?'AUX+ CAN APPROVE':'VIEW ONLY'}</span></div><div class="ops-list">${(ixData.eventSubmissions||[]).filter(s=>s.status==='pending').slice(0,8).map(s=>`<div class="ops-row"><div><b>${escapeHtml(s.title)}</b><small>${escapeHtml(s.display_name||'Staff')} · ${formatOpsDateTime(s.created_at)}</small></div>${canApproveEvents()?`<button class="mini-btn" onclick="openApproveEventSubmission('${s.id}')">APPROVE</button>`:''}</div>`).join('')||`<div class="ops-empty">No pending action submissions.</div>`}</div></section></div></div>`;
 }
@@ -4201,17 +4558,17 @@ function renderActionSchedule(){
 
 function renderActionTracker(){
     const rows=actionData.tracker||[];
-    return `<div class="action-page action-table-page">${actionErrorNotice('action_tracker')}<section class="ops-card"><div class="ops-card-head"><div><h3>Actions Tracker</h3><small>Completed action records, matching the tracker workflow from your video.</small></div><div class="ops-actions"><button class="primary-button" onclick="openActionTrackerModal()">+ Add row</button><span class="ops-pill">${rows.length} actions</span></div></div><div class="action-table-wrap"><table class="action-table"><thead><tr><th>Date</th><th>Type</th><th>Status</th><th>ORG 1</th><th>ORG 2</th><th>Attended</th><th>Winner</th><th>ORG 1 #</th><th>ORG 2 #</th><th>IDs</th><th>Comped</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${actionDateLabel(r.event_date)}</td><td><span class="action-type-chip" style="--action-colour:${escapeAttribute(actionTypes('action').find(t=>t.name===r.action_type)?.colour||'#ef334f')}">${escapeHtml(r.action_type||'')}</span></td><td>${escapeHtml(r.status||'')}</td><td>${escapeHtml(r.org1||'')}</td><td>${escapeHtml(r.org2||'')}</td><td>${escapeHtml(parseAttendees(r.attended).length?parseAttendees(r.attended).length+' selected':'0 selected')}</td><td>${escapeHtml(r.winner||'N/A')}</td><td>${Number(r.org1_count||0)}</td><td>${Number(r.org2_count||0)}</td><td class="action-ids-cell">${escapeHtml(r.ids||'')}</td><td>${r.winner_comped?'☑':'☐'}</td><td>${canUseTeam('actions')?`<button class="mini-btn" onclick="editActionTrackerRow('${r.id}')">EDIT</button>`:''}</td></tr>`).join('')||`<tr><td colspan="12"><div class="ops-empty">No actions recorded yet.</div></td></tr>`}</tbody></table></div></section></div>`;
+    return `<div class="action-page action-table-page">${actionErrorNotice('action_tracker')}<section class="ops-card"><div class="ops-card-head"><div><h3>Actions Tracker</h3><small>Completed action records, matching the tracker workflow from your video.</small></div><div class="ops-actions">${canManage()?`<button class="secondary-button" onclick="openActionCatalogueManager()">⚙ Manage Action Names</button>`:""}<button class="primary-button" onclick="openActionTrackerModal()">+ Add row</button><span class="ops-pill">${rows.length} actions</span></div></div><div class="action-table-wrap"><table class="action-table"><thead><tr><th>Date</th><th>Type</th><th>Status</th><th>ORG 1</th><th>ORG 2</th><th>Attended</th><th>Winner</th><th>ORG 1 #</th><th>ORG 2 #</th><th>IDs</th><th>Comped</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${actionDateLabel(r.event_date)}</td><td><span class="action-type-chip" style="--action-colour:${escapeAttribute(actionTypes('action').find(t=>t.name===r.action_type)?.colour||'#ef334f')}">${escapeHtml(r.action_type||'')}</span></td><td>${escapeHtml(r.status||'')}</td><td>${escapeHtml(r.org1||'')}</td><td>${escapeHtml(r.org2||'')}</td><td>${escapeHtml(parseAttendees(r.attended).length?parseAttendees(r.attended).length+' selected':'0 selected')}</td><td>${escapeHtml(r.winner||'N/A')}</td><td>${Number(r.org1_count||0)}</td><td>${Number(r.org2_count||0)}</td><td class="action-ids-cell">${escapeHtml(r.ids||'')}</td><td>${r.winner_comped?'☑':'☐'}</td><td>${canUseTeam('actions')?`<button class="mini-btn" onclick="editActionTrackerRow('${r.id}')">EDIT</button>`:''}</td></tr>`).join('')||`<tr><td colspan="12"><div class="ops-empty">No actions recorded yet.</div></td></tr>`}</tbody></table></div></section></div>`;
 }
 
 function renderActionBrTracker(){
     const rows=actionData.br||[];
-    return `<div class="action-page action-table-page">${actionErrorNotice('action_br_tracker')}<section class="ops-card"><div class="ops-card-head"><div><h3>Battle Royale Tracker</h3><small>Separate BR tracking, just like the reference tracker.</small></div><div class="ops-actions"><button class="primary-button" onclick="openBrTrackerModal()">+ Add row</button><span class="ops-pill">${rows.length} BRs</span></div></div><div class="action-table-wrap"><table class="action-table"><thead><tr><th>Date</th><th>Type</th><th>Status</th><th>Attended</th><th>1st Place</th><th>Winner Comped</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${actionDateLabel(r.event_date)}</td><td><span class="action-type-chip" style="--action-colour:${escapeAttribute(actionTypes('br').find(t=>t.name===r.action_type)?.colour||'#9b2c5e')}">${escapeHtml(r.action_type||'')}</span></td><td>${escapeHtml(r.status||'')}</td><td>${escapeHtml(parseAttendees(r.attended).length?parseAttendees(r.attended).length+' selected':'0 selected')}</td><td>${escapeHtml(r.first_place||'')}</td><td>${r.winner_comped?'☑':'☐'}</td><td>${canUseTeam('actions')?`<button class="mini-btn" onclick="editBrTrackerRow('${r.id}')">EDIT</button>`:''}</td></tr>`).join('')||`<tr><td colspan="7"><div class="ops-empty">No BRs recorded yet.</div></td></tr>`}</tbody></table></div></section></div>`;
+    return `<div class="action-page action-table-page">${actionErrorNotice('action_br_tracker')}<section class="ops-card"><div class="ops-card-head"><div><h3>Battle Royale Tracker</h3><small>Separate BR tracking, just like the reference tracker.</small></div><div class="ops-actions"><button class="secondary-button" onclick="openBrCatalogueManager()">⚙ Manage BR Names</button><button class="primary-button" onclick="openBrTrackerModal()">+ Add row</button><span class="ops-pill">${rows.length} BRs</span></div></div><div class="action-table-wrap"><table class="action-table"><thead><tr><th>Date</th><th>Type</th><th>Status</th><th>Attended</th><th>1st Place</th><th>Winner Comped</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${actionDateLabel(r.event_date)}</td><td><span class="action-type-chip" style="--action-colour:${escapeAttribute(actionTypes('br').find(t=>t.name===r.action_type)?.colour||'#9b2c5e')}">${escapeHtml(r.action_type||'')}</span></td><td>${escapeHtml(r.status||'')}</td><td>${escapeHtml(parseAttendees(r.attended).length?parseAttendees(r.attended).length+' selected':'0 selected')}</td><td>${escapeHtml(r.first_place||'')}</td><td>${r.winner_comped?'☑':'☐'}</td><td>${canUseTeam('actions')?`<button class="mini-btn" onclick="editBrTrackerRow('${r.id}')">EDIT</button>`:''}</td></tr>`).join('')||`<tr><td colspan="7"><div class="ops-empty">No BRs recorded yet.</div></td></tr>`}</tbody></table></div></section></div>`;
 }
 
 function renderActionLog(){
     const logs=actionData.logs||[];
-    return `<div class="action-page"><section class="ops-card action-log-form-card"><div class="ops-card-head"><h3>Log an action</h3><span class="ops-subtle">Record positive or negative activity</span></div><form id="actionLogForm" class="ops-form"><label>Organisation<select name="organisation"><option value="">—</option>${actionStaffNames().map(n=>`<option>${escapeHtml(n)}</option>`).join('')}</select></label><label>Action<input name="action" maxlength="160" required placeholder="What happened?"></label><label>Result<div class="result-toggle"><label><input type="radio" name="result" value="Positive" checked> Positive</label><label><input type="radio" name="result" value="Negative"> Negative</label></div></label><label>Numbers / why<textarea name="numbers" rows="3" placeholder="Positive: who was involved / numbers. Negative: why it was negative."></textarea></label><label>Proof URL<input name="proof_url" type="url" placeholder="https://..."></label><button class="primary-button">Submit log</button></form></section>${opsCard('Your logs',logs.filter(l=>!l.staff_id || String(l.staff_id)===String(getCurrentStaffRecord()?.id||'' )).length?`<div class="action-log-list">${logs.filter(l=>!l.staff_id || String(l.staff_id)===String(getCurrentStaffRecord()?.id||'')).slice(0,50).map(l=>`<div class="action-log-row"><span>${formatOpsDateTime(l.created_at)}</span><b>${escapeHtml(l.organisation||'—')}</b><b>${escapeHtml(l.action)}</b><span class="result-pill ${String(l.result).toLowerCase()}">${escapeHtml(l.result)}</span><span>${escapeHtml(l.numbers||'')}</span>${l.proof_url?`<a href="${escapeAttribute(l.proof_url)}" target="_blank" rel="noopener">Proof</a>`:''}</div>`).join('')}</div>`:`<div class="ops-empty">No logs yet.</div>`)}</div>`;
+    return `<div class="action-page"><section class="ops-card action-log-form-card"><div class="ops-card-head"><h3>Log an action</h3><span class="ops-subtle">Record positive or negative activity</span></div><form id="actionLogForm" class="ops-form"><label>Organisation<input name="organisation" list="actionOrganisationOptions" maxlength="100" placeholder="Choose or type an organisation"><datalist id="actionOrganisationOptions">${actionOrganisationNames().map(n=>`<option value="${escapeAttribute(n)}"></option>`).join('')}</datalist></label><label>Action<input name="action" maxlength="160" required placeholder="What happened?"></label><label>Result<div class="result-toggle"><label><input type="radio" name="result" value="Positive" checked> Positive</label><label><input type="radio" name="result" value="Negative"> Negative</label></div></label><label>Numbers / why<textarea name="numbers" rows="3" placeholder="Positive: who was involved / numbers. Negative: why it was negative."></textarea></label><label>Proof URL<input name="proof_url" type="url" placeholder="https://..."></label><button class="primary-button">Submit log</button></form></section>${opsCard('Your logs',logs.filter(l=>!l.staff_id || String(l.staff_id)===String(getCurrentStaffRecord()?.id||'' )).length?`<div class="action-log-list">${logs.filter(l=>!l.staff_id || String(l.staff_id)===String(getCurrentStaffRecord()?.id||'')).slice(0,50).map(l=>`<div class="action-log-row"><span>${formatOpsDateTime(l.created_at)}</span><b>${escapeHtml(l.organisation||'—')}</b><b>${escapeHtml(l.action)}</b><span class="result-pill ${String(l.result).toLowerCase()}">${escapeHtml(l.result)}</span><span>${escapeHtml(l.numbers||'')}</span>${l.proof_url?`<a href="${escapeAttribute(l.proof_url)}" target="_blank" rel="noopener">Proof</a>`:''}</div>`).join('')}</div>`:`<div class="ops-empty">No logs yet.</div>`)}</div>`;
 }
 
 function renderActionStats(){
@@ -4285,7 +4642,7 @@ function renderActionUsers(){
 }
 
 function openActionTrackerModal(id=''){
-    const r=(actionData.tracker||[]).find(x=>String(x.id)===String(id))||{}; const title=id?'Edit action':'Add action'; showModal(`<div class="modal"><div class="modal-header"><div><span class="modal-eyebrow">ACTIONS TRACKER</span><h2>${title}</h2></div><button class="modal-close" onclick="closeModal()">×</button></div><form id="actionTrackerForm" class="ops-form"><div class="form-grid"><label>Date<input type="date" name="event_date" value="${escapeAttribute(r.event_date||formatDate(new Date()))}" required></label><label>Type<select name="action_type" required><option value="">Select action</option>${actionTypeOptions('action',r.action_type)}</select></label><label>Status<select name="status"><option ${r.status==='Completed'?'selected':''}>Completed</option><option ${r.status==='No-show'?'selected':''}>No-show</option><option ${r.status==='Cancelled'?'selected':''}>Cancelled</option><option ${r.status==='Scheduled'?'selected':''}>Scheduled</option></select></label><label>ORG 1<input name="org1" value="${escapeAttribute(r.org1||'')}" placeholder="Crystal Cartel"></label><label>ORG 2<input name="org2" value="${escapeAttribute(r.org2||'')}" placeholder="PD"></label><label>Winner<input name="winner" list="actionWinnerNames" value="${escapeAttribute(r.winner||'')}" placeholder="Type winner name or Discord ID"><datalist id="actionWinnerNames">${actionStaffNames().map(n=>`<option value="${escapeAttribute(n)}"></option>`).join('')}</datalist></label><label>ORG 1 #<input type="number" name="org1_count" min="0" value="${Number(r.org1_count||0)}"></label><label>ORG 2 #<input type="number" name="org2_count" min="0" value="${Number(r.org2_count||0)}"></label><label class="form-field full">Attended<textarea name="attended" rows="3" placeholder="Names, comma separated">${escapeHtml(r.attended||'')}</textarea></label><label class="form-field full">IDs<textarea name="ids" rows="2" placeholder="Discord IDs, comma separated">${escapeHtml(r.ids||'')}</textarea></label><label><input type="checkbox" name="winner_comped" ${r.winner_comped?'checked':''}> Winner comped</label></div><div class="modal-footer"><button type="button" class="secondary-button" onclick="closeModal()">Cancel</button><button class="primary-button">Save</button></div></form></div>`); document.getElementById('actionTrackerForm')?.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const payload={event_date:d.event_date,action_type:d.action_type,status:d.status,org1:d.org1,org2:d.org2,attended:d.attended,winner:d.winner,org1_count:Number(d.org1_count||0),org2_count:Number(d.org2_count||0),ids:d.ids,winner_comped:e.target.winner_comped.checked,updated_by:currentUser.id};const q=id?supabaseClient.from('kng_action_tracker').update(payload).eq('id',id):supabaseClient.from('kng_action_tracker').insert({...payload,created_by:currentUser.id});const {error}=await q;if(error)return alert(error.message);closeModal();await loadActionData();render();});
+    const r=(actionData.tracker||[]).find(x=>String(x.id)===String(id))||{}; const title=id?'Edit action':'Add action'; showModal(`<div class="modal"><div class="modal-header"><div><span class="modal-eyebrow">ACTIONS TRACKER</span><h2>${title}</h2></div><button class="modal-close" onclick="closeModal()">×</button></div><form id="actionTrackerForm" class="ops-form"><div class="form-grid"><label>Date<input type="date" name="event_date" value="${escapeAttribute(r.event_date||formatDate(new Date()))}" required></label><label>Type<select name="action_type" required><option value="">Select action</option>${actionTypeOptions('action',r.action_type)}</select></label><label>Status<select name="status"><option ${r.status==='Completed'?'selected':''}>Completed</option><option ${r.status==='No-show'?'selected':''}>No-show</option><option ${r.status==='Cancelled'?'selected':''}>Cancelled</option><option ${r.status==='Scheduled'?'selected':''}>Scheduled</option></select></label><label>ORG 1<input name="org1" value="${escapeAttribute(r.org1||'')}" placeholder="Crystal Cartel"></label><label>ORG 2<input name="org2" value="${escapeAttribute(r.org2||'')}" placeholder="PD"></label><label>Winner<input name="winner" list="actionWinnerNames" value="${escapeAttribute(r.winner||'')}" placeholder="Type winner name or Discord ID"><datalist id="actionWinnerNames">${actionStaffNames().map(n=>`<option value="${escapeAttribute(n)}"></option>`).join('')}</datalist></label><label>ORG 1 #<input type="number" name="org1_count" min="0" value="${Number(r.org1_count||0)}"></label><label>ORG 2 #<input type="number" name="org2_count" min="0" value="${Number(r.org2_count||0)}"></label><label class="form-field full">Event host<select name="host_staff_id"><option value="">Select host (optional)</option>${(staff||[]).filter(s=>s?.id).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(s=>`<option value="${escapeAttribute(s.id)}">${escapeHtml(s.name||'Unnamed')}${s.discord_id?` · ${escapeHtml(s.discord_id)}`:''}</option>`).join('')}</select><small>Hosting and helping both earn 1 daily-goal point.</small></label><label class="form-field full">Event helpers<select name="helper_staff_ids" id="actionHelperStaffIds" multiple size="5">${(staff||[]).filter(s=>s?.id).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).map(s=>`<option value="${escapeAttribute(s.id)}">${escapeHtml(s.name||'Unnamed')}${s.discord_id?` · ${escapeHtml(s.discord_id)}`:''}</option>`).join('')}</select><small>Hold Ctrl (Windows) or Command (Mac) to select multiple helpers. Each selected helper earns 1 daily-goal point.</small></label><label class="form-field full">Attended<textarea name="attended" rows="3" placeholder="Names, comma separated">${escapeHtml(r.attended||'')}</textarea></label><label class="form-field full">IDs<textarea name="ids" rows="2" placeholder="Discord IDs, comma separated">${escapeHtml(r.ids||'')}</textarea></label><label><input type="checkbox" name="winner_comped" ${r.winner_comped?'checked':''}> Winner comped</label></div><div class="modal-footer"><button type="button" class="secondary-button" onclick="closeModal()">Cancel</button><button class="primary-button">Save</button></div></form></div>`); document.getElementById('actionTrackerForm')?.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const payload={event_date:d.event_date,action_type:d.action_type,status:d.status,org1:d.org1,org2:d.org2,attended:d.attended,winner:d.winner,org1_count:Number(d.org1_count||0),org2_count:Number(d.org2_count||0),ids:d.ids,winner_comped:e.target.winner_comped.checked,updated_by:currentUser.id};const q=id?supabaseClient.from('kng_action_tracker').update(payload).eq('id',id).select('id').single():supabaseClient.from('kng_action_tracker').insert({...payload,created_by:currentUser.id}).select('id').single();const {data:saved,error}=await q;if(error)return alert(error.message);const hostId=String(e.target.elements.host_staff_id?.value||'').trim();const helperIds=Array.from(document.getElementById('actionHelperStaffIds')?.selectedOptions||[]).map(o=>o.value).filter(Boolean);const participantIds=[...new Set([hostId,...helperIds].filter(Boolean))];if(participantIds.length){const {error:creditError}=await supabaseClient.rpc('kng_award_action_event_points',{p_event_id:saved.id,p_event_date:d.event_date,p_staff_ids:participantIds});if(creditError)return alert('The action was saved, but daily-goal points could not be awarded. Run KNG-ACTION-EVENT-HELPER-POINTS-PATCH.sql in Supabase. Details: '+creditError.message);}closeModal();await loadActionData();await loadInteractionData();render();});
 }
 function editActionTrackerRow(id){ openActionTrackerModal(id); }
 function openBrTrackerModal(id=''){ const r=(actionData.br||[]).find(x=>String(x.id)===String(id))||{}; showModal(`<div class="modal"><div class="modal-header"><div><span class="modal-eyebrow">BR TRACKER</span><h2>${id?'Edit BR':'Add BR'}</h2></div><button class="modal-close" onclick="closeModal()">×</button></div><form id="brTrackerForm" class="ops-form"><div class="form-grid"><label>Date<input type="date" name="event_date" value="${escapeAttribute(r.event_date||formatDate(new Date()))}" required></label><label>Type<select name="action_type" required><option value="">Select BR</option>${actionTypeOptions('br',r.action_type)}</select></label><label>Status<select name="status"><option>Completed</option><option>No-show</option><option>Cancelled</option><option>Scheduled</option></select></label><label>1st place<input name="first_place" value="${escapeAttribute(r.first_place||'')}"></label><label class="form-field full">Attended<textarea name="attended" rows="4">${escapeHtml(r.attended||'')}</textarea></label><label><input type="checkbox" name="winner_comped" ${r.winner_comped?'checked':''}> Winner comped</label></div><div class="modal-footer"><button type="button" class="secondary-button" onclick="closeModal()">Cancel</button><button class="primary-button">Save</button></div></form></div>`); document.getElementById('brTrackerForm')?.addEventListener('submit',async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target).entries());const payload={event_date:d.event_date,action_type:d.action_type,status:d.status,attended:d.attended,first_place:d.first_place,winner_comped:e.target.winner_comped.checked,updated_by:currentUser.id};const q=id?supabaseClient.from('kng_action_br_tracker').update(payload).eq('id',id):supabaseClient.from('kng_action_br_tracker').insert({...payload,created_by:currentUser.id});const {error}=await q;if(error)return alert(error.message);closeModal();await loadActionData();render();}); }
@@ -4459,7 +4816,7 @@ function getRosterDisplayName(row) {
 // both team rosters so the Discord copy is useful for either team. Directors
 // remain outside the normal roster export/display.
 function isCrossTeamManagementRole(level) {
-    return ['manager', 'culture_manager', 'entertainment_resp'].includes(String(level || '').toLowerCase());
+    return ['manager', 'culture_manager', 'entertainment_resp', 'director'].includes(String(level || '').toLowerCase());
 }
 
 // Staff roster visibility is team-scoped for ADM and below. Only roles
@@ -4489,14 +4846,29 @@ function canPromoteRosterRow(row) {
     return permissionRank() > targetRank;
 }
 
+
+function canRemoveRosterRow(row) {
+    if (!row || permissionRank() < 3) return false;
+    const target = String(row.hierarchy_level || "member").toLowerCase();
+    const rank = ({member:1, sub_ld:1, ld:1, aux:2, adm:3, entertainment_resp:4, culture_manager:4, manager:4, director:5})[target] || 0;
+    return permissionRank() > rank;
+}
+
+function canRevokeRosterAccess(row) {
+    if (!row || permissionRank() < 2) return false;
+    const target = String(row.hierarchy_level || "member").toLowerCase();
+    const rank = ({member:1, sub_ld:1, ld:1, aux:2, adm:3, entertainment_resp:4, culture_manager:4, manager:4, director:5})[target] || 0;
+    return permissionRank() > rank;
+}
+
 function rosterMemberHtml(r, team) {
     const selfDiscord = getDiscordIdentity().discordId;
     const rowDiscord = String(r.staff?.discord_id || r.discord_id || '').trim();
     const isSelf = Boolean(selfDiscord && rowDiscord && selfDiscord === rowDiscord);
-    const controls = canManage() && !isSelf && isDirector() ? `<button class="mini-btn" onclick="openRosterAccessModal('${r.id}')">ACCESS</button>` : '';
-    const actions = !isSelf && (canManage() || getPermissionLevel()==='aux')
-        ? `${canPromoteRosterRow(r) ? `<button class="mini-btn" onclick="promoteRosterMember('${r.id}')">PROMOTE</button>` : ''}<button class="mini-btn" onclick="openRosterEditModal('${r.id}')">EDIT</button>${canManage() && isDirector() ? `<button class="mini-btn danger" onclick="deleteRosterMember('${r.id}')">REMOVE</button>` : ''}`
-        : `<span class="roster-view-only">${isSelf ? 'Own account' : 'View only'}</span>`;
+    const controls = !isSelf && isDirector() ? `<button class="mini-btn" onclick="openRosterAccessModal('${r.id}')">ACCESS</button>` : '';
+    const actions = !isSelf
+        ? `${canPromoteRosterRow(r) ? `<button class="mini-btn" onclick="promoteRosterMember('${r.id}')">PROMOTE</button>` : ''}${(canManage() || getPermissionLevel()==='aux') ? `<button class="mini-btn" onclick="openRosterEditModal('${r.id}')">EDIT</button>` : ''}${canRemoveRosterRow(r) ? `<button class="mini-btn danger" onclick="deleteRosterMember('${r.id}')">REMOVE</button>` : ''}${canRevokeRosterAccess(r) ? `<button class="mini-btn danger" onclick="revokeRosterStaffAccess('${r.id}')">REVOKE ACCESS</button>` : ''}`
+        : `<span class="roster-view-only">Own account</span>`;
     return `<div class="roster-row">
         <span class="roster-name"><b>${escapeHtml(getRosterDisplayName(r))}</b>${(ixData.hof||[]).some(h=>String(h.winner_staff_id||'')===String(r.staff_id||'') || (r.staff?.discord_id && String(h.winner_discord_id||'')===String(r.staff.discord_id))) ? `<small class="roster-hof-link">🏆 Hall of Fame</small>` : ``}</span>
         <span>${escapeHtml(r.kng_id||'N/A')}</span>
@@ -4504,7 +4876,7 @@ function rosterMemberHtml(r, team) {
         <span>${Number(r.strikes||0)}/3</span>
         <span>${r.mentor?'Yes':'N/A'}</span>
         <span class="roster-access"><span class="access-level-pill">${escapeHtml(rosterLevelLabel(r.hierarchy_level,team))}</span>${controls}</span>
-        <span class="roster-actions">${actions}</span>
+        <span class="roster-actions">${actions || `<span class="roster-view-only">View only</span>`}</span>
     </div>`;
 }
 
@@ -4547,7 +4919,7 @@ function renderStaffRoster(){
     }
 
     const managementRows=(rosterData || [])
-        .filter(r=>canSeeBoth && r.active !== false && isCrossTeamManagementRole(r.hierarchy_level))
+        .filter(r=>canSeeBoth && r.active !== false && String(r.team || '').toLowerCase() !== 'leadership' && isCrossTeamManagementRole(r.hierarchy_level))
         .sort((a,b)=>rosterLevelRank(b.hierarchy_level)-rosterLevelRank(a.hierarchy_level)||getRosterDisplayName(a).localeCompare(getRosterDisplayName(b)));
 
     const renderManagement=()=> managementRows.length
@@ -4569,11 +4941,13 @@ function renderStaffRoster(){
             .filter(r=>r.team===team && r.active !== false && !isCrossTeamManagementRole(r.hierarchy_level) && String(r.hierarchy_level||'').toLowerCase() !== 'director')
             .sort((a,b)=>rosterLevelRank(b.hierarchy_level)-rosterLevelRank(a.hierarchy_level)||getRosterDisplayName(a).localeCompare(getRosterDisplayName(b)));
         const groups=['adm','aux','ld','sub_ld','member'];
-        return groups.map(level=>renderRosterGroup(level, rows.filter(r=>String(r.hierarchy_level||'').toLowerCase()===level), team)).join('') || `<div class="ix-empty">No ${escapeHtml(team)} staff allocated yet.</div>`;
+        return groups.map(level=>renderRosterGroup(level, rows.filter(r=>String(r.hierarchy_level||'').toLowerCase()===level), team)).join('') || `<div class="ix-empty">No ${escapeHtml(team)} helpers allocated yet.</div>`;
     };
 
     const exportButton=(team,label)=>canManage() && canViewRosterTeam(team) ? `<button class="primary-button small" onclick="copyRosterToDiscord('${team}')">${label} · Copy Discord Roster</button>` : '';
     const managementCount=managementRows.length;
+    const leadershipRows=(rosterData || []).filter(r=>canSeeBoth && r.active !== false && String(r.team || '').toLowerCase()==='leadership').sort((a,b)=>rosterLevelRank(b.hierarchy_level)-rosterLevelRank(a.hierarchy_level)||getRosterDisplayName(a).localeCompare(getRosterDisplayName(b)));
+    const renderLeadership=()=> leadershipRows.length ? `<section class="roster-team-panel roster-leadership-panel"><div class="roster-team-title-row"><div><div class="roster-team-title">KNG LEADERSHIP</div><small>${leadershipRows.length} central leadership members · separate from operational teams</small></div></div><div class="roster-group"><div class="roster-table"><div class="roster-head"><span>NAME</span><span>ID</span><span>DISCORD</span><span>STRIKES</span><span>MENTOR</span><span>ACCESS</span><span>ACTIONS</span></div>${leadershipRows.map(r=>rosterMemberHtml(r,'leadership')).join('')}</div></div></section>` : '';
     const directory = canSeeBoth ? renderAccessTeamDirectory() : '';
 
     const renderVisibleTeam=(team, label)=>{
@@ -4586,7 +4960,7 @@ function renderStaffRoster(){
         </section>`;
     };
 
-    return `<div class="roster-page">${directory}${visibleTeams.map(team=>renderVisibleTeam(team, team.toUpperCase())).join('')}</div>`;
+    return `<div class="roster-page">${directory}${renderLeadership()}${visibleTeams.map(team=>renderVisibleTeam(team, team.toUpperCase())).join('')}</div>`;
 }
 
 function bindInteractionHandlers(){ }
@@ -4789,7 +5163,7 @@ function rosterLevelRank(level) {
 }
 
 function rosterLevelLabel(level, team) {
-    if (level === 'manager') return `Manager Of ${team === 'actions' ? 'Actions' : 'Interactions'}`;
+    if (level === 'manager') return team === 'leadership' ? 'Management' : `Manager Of ${team === 'actions' ? 'Actions' : 'Interactions'}`;
     if (level === 'culture_manager') return 'Culture Manager';
     if (level === 'entertainment_resp') return 'Entertainment Resp';
     if (level === 'sub_ld') return 'Sub-LD';
@@ -4797,9 +5171,9 @@ function rosterLevelLabel(level, team) {
 }
 
 async function allocateEntertainmentTeam(staffId, team) {
-    if (!canManage()) return;
-    if (!['actions','interactions'].includes(team)) return;
-    const { error } = await supabaseClient.rpc('allocate_entertainment_staff', {
+    if (!canApproveAccess()) return alert('AUX access or higher is required to allocate newly approved staff.');
+    if (!['actions','interactions','leadership'].includes(team)) return;
+    const { error } = await supabaseClient.rpc('allocate_approved_entertainment_staff', {
         p_staff_id: staffId,
         p_team: team
     });
@@ -4837,10 +5211,25 @@ async function promoteRosterMember(id) {
 }
 
 async function deleteRosterMember(id) {
-    if (!canManage() || !confirm('Remove this staff member from the Entertainment roster?')) return;
-    const { error } = await supabaseClient.from('entertainment_roster').update({ active: false, updated_by: currentUser.id }).eq('id', id);
+    const row = (rosterData || []).find(r => String(r.id) === String(id));
+    if (!row || !canRemoveRosterRow(row)) return alert("You do not have permission to remove this roster member.");
+    if (!confirm(`Remove ${getRosterDisplayName(row)} from the ${String(row.team || "KNG")} roster? Their site access will remain active.`)) return;
+    const { error } = await supabaseClient.rpc('remove_entertainment_roster_member', { p_roster_id: id });
     if (error) return alert(error.message);
-    await loadRosterData(); render();
+    await loadRosterData();
+    render();
+}
+
+async function revokeRosterStaffAccess(id) {
+    const row = (rosterData || []).find(r => String(r.id) === String(id));
+    if (!row || !canRevokeRosterAccess(row)) return alert("You do not have permission to revoke this person's access.");
+    if (!confirm(`Completely remove ${getRosterDisplayName(row)} from KNG? This will deactivate their site access AND remove them from the active roster.`)) return;
+    const { error } = await supabaseClient.rpc('revoke_entertainment_roster_access', { p_roster_id: id });
+    if (error) return alert(error.message);
+    await loadAccess();
+    await loadRosterData();
+    await loadStaff();
+    render();
 }
 
 
@@ -4873,7 +5262,7 @@ function openRosterEditModal(id) {
     const name = getRosterDisplayName(row);
     const discordId = row.staff?.discord_id || row.discord_id || '';
     const auxOnly = getPermissionLevel() === 'aux';
-    showModal(`<div class="modal roster-edit-modal"><div class="modal-header"><div><span class="modal-eyebrow">KNG Entertainment</span><h2>Edit roster member</h2><small>${auxOnly ? 'AUX can update display names only.' : 'Change their roster name, team or level here.'}</small></div><button class="modal-close" onclick="closeModal()">×</button></div><form class="ops-form" id="rosterEditForm"><div class="form-grid"><div class="form-field"><label>Name</label><input name="name" value="${escapeAttribute(name)}" required></div>${auxOnly ? '' : `<div class="form-field"><label>ID</label><input name="kng_id" value="${escapeAttribute(row.kng_id || '')}"></div><div class="form-field"><label>Discord ID</label><input name="discord_id" value="${escapeAttribute(discordId)}"></div><div class="form-field"><label>Team</label><select name="team"><option value="actions" ${row.team==='actions'?'selected':''}>Actions</option><option value="interactions" ${row.team==='interactions'?'selected':''}>Interactions</option></select></div><div class="form-field"><label>Level</label><select name="hierarchy_level">${['director','manager','culture_manager','entertainment_resp','adm','aux','ld','sub_ld','member'].map(v=>`<option value="${v}" ${row.hierarchy_level===v?'selected':''}>${escapeHtml(rosterLevelLabel(v,row.team))}</option>`).join('')}</select></div><div class="form-field"><label>Strikes</label><select name="strikes"><option value="0" ${Number(row.strikes||0)===0?'selected':''}>0</option><option value="1" ${Number(row.strikes||0)===1?'selected':''}>1</option><option value="2" ${Number(row.strikes||0)===2?'selected':''}>2</option><option value="3" ${Number(row.strikes||0)>=3?'selected':''}>3</option></select></div><div class="form-field"><label>Mentor</label><select name="mentor"><option value="false" ${!row.mentor?'selected':''}>N/A</option><option value="true" ${row.mentor?'selected':''}>Mentor</option></select></div><div class="form-field full"><label>Notes</label><textarea name="notes" rows="4">${escapeHtml(row.notes || '')}</textarea></div>`}</div><button class="primary-button">Save Changes</button></form></div>`);
+    showModal(`<div class="modal roster-edit-modal"><div class="modal-header"><div><span class="modal-eyebrow">KNG Entertainment</span><h2>Edit roster member</h2><small>${auxOnly ? 'AUX can update display names only.' : 'Change their roster name, team or level here.'}</small></div><button class="modal-close" onclick="closeModal()">×</button></div><form class="ops-form" id="rosterEditForm"><div class="form-grid"><div class="form-field"><label>Name</label><input name="name" value="${escapeAttribute(name)}" required></div>${auxOnly ? '' : `<div class="form-field"><label>ID</label><input name="kng_id" value="${escapeAttribute(row.kng_id || '')}"></div><div class="form-field"><label>Discord ID</label><input name="discord_id" value="${escapeAttribute(discordId)}"></div><div class="form-field"><label>Team</label><select name="team"><option value="actions" ${row.team==='actions'?'selected':''}>Actions</option><option value="interactions" ${row.team==='interactions'?'selected':''}>Interactions</option>${isDirector() ? `<option value="leadership" ${row.team==='leadership'?'selected':''}>KNG Leadership</option>` : ``}</select></div><div class="form-field"><label>Level</label><select name="hierarchy_level">${['director','manager','culture_manager','entertainment_resp','adm','aux','ld','sub_ld','member'].map(v=>`<option value="${v}" ${row.hierarchy_level===v?'selected':''}>${escapeHtml(rosterLevelLabel(v,row.team))}</option>`).join('')}</select></div><div class="form-field"><label>Strikes</label><select name="strikes"><option value="0" ${Number(row.strikes||0)===0?'selected':''}>0</option><option value="1" ${Number(row.strikes||0)===1?'selected':''}>1</option><option value="2" ${Number(row.strikes||0)===2?'selected':''}>2</option><option value="3" ${Number(row.strikes||0)>=3?'selected':''}>3</option></select></div><div class="form-field"><label>Mentor</label><select name="mentor"><option value="false" ${!row.mentor?'selected':''}>N/A</option><option value="true" ${row.mentor?'selected':''}>Mentor</option></select></div><div class="form-field full"><label>Notes</label><textarea name="notes" rows="4">${escapeHtml(row.notes || '')}</textarea></div>`}</div><button class="primary-button">Save Changes</button></form></div>`);
     document.getElementById('rosterEditForm')?.addEventListener('submit', async e => {
         e.preventDefault();
         const data = Object.fromEntries(new FormData(e.target).entries());
@@ -5014,6 +5403,7 @@ window.moderateSuggestion=moderateSuggestion;
 window.setSuggestionStatus=setSuggestionStatus;
 window.deleteSuggestion=deleteSuggestion;
 window.allocateEntertainmentTeam=allocateEntertainmentTeam;
+window.allocateDirectorSearchStaff=allocateDirectorSearchStaff;
 window.promoteRosterMember=promoteRosterMember;
 window.openRosterEditModal=openRosterEditModal;
 window.deleteRosterMember=deleteRosterMember;

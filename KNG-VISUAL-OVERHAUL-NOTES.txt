@@ -1,0 +1,25 @@
+KNG SCHEDULE - VISUAL CONSISTENCY AND ACTION CATALOGUE UPDATE
+15 November 2026
+
+VISUAL CLEANUP
+- Added a shared component styling layer for Director, Actions and Interactions workspaces.
+- Standardised the top Director / Actions / Interactions switcher: equal minimum widths, matching height, font size, weight, spacing and active-state treatment.
+- Standardised sidebar navigation dimensions, icon alignment, typography and active states.
+- Standardised primary/secondary/header button geometry and typography.
+- Standardised inputs, selects, textareas and native form controls to use the dark theme rather than browser-default white controls.
+- Corrected Actions schedule and type-chip accents so legacy red/pink event-type colours do not leak into the blue Actions workspace.
+- Standardised heading, label, table and badge typography.
+- Preserved the existing red Interactions / Director identity and blue Actions identity.
+- Added responsive rules for the switcher and catalogue editor.
+
+ACTION NAME CATALOGUE
+- Added ADM+ Manage Action Names controls to Host an Action and Actions Tracker.
+- ADM+ can add, rename, remove (soft deactivate), and restore action names.
+- Removed action names are excluded from future action selection but historical tracker records remain.
+- New and renamed action types are synchronised with event_types so approved action submissions can use the corresponding shared schedule event type.
+- Existing kng_action_types table and policies are reused. No new SQL patch is required for this feature.
+
+VALIDATION
+- app.js passes Node.js syntax validation.
+- No database or live Supabase operation was performed in this build environment.
+- Deploy the ZIP, then hard refresh the site (Ctrl+Shift+R).

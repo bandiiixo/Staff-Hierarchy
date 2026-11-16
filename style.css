@@ -2969,3 +2969,996 @@ body {
 
 /* Staff roster Hall of Fame association */
 .roster-hof-link{display:inline-flex;align-items:center;margin-top:3px;font-size:10px;font-weight:800;letter-spacing:.04em;color:#f4c76b;}
+
+
+/* =========================================================
+   ACTIONS WORKSPACE · DARK BLUE CONTRAST THEME
+   Scoped to Actions only; Interactions and shared/public pages retain KNG red.
+   ========================================================= */
+.actions-theme {
+    --red: #2878d0;
+    --red-2: #4b9bfa;
+    --red-soft: rgba(35, 112, 204, .20);
+    --panel: #091a31;
+    --panel-2: #0c2340;
+    --panel-3: #103052;
+    --line: rgba(77, 153, 235, .20);
+    --line-strong: rgba(89, 169, 250, .36);
+    --blue: #69b5ff;
+}
+.actions-theme .schedule-logo {
+    background: linear-gradient(145deg, #185da8, #0a2c55);
+    box-shadow: 0 8px 24px rgba(24, 105, 190, .30);
+}
+.actions-theme .schedule-logo.crown-logo {
+    text-shadow: 0 0 10px rgba(93, 177, 255, .62);
+}
+.actions-theme .workspace-switch-btn.active {
+    background: linear-gradient(135deg, #155da9, #328ce8);
+    box-shadow: 0 0 14px rgba(35, 125, 220, .28);
+}
+.actions-theme .sidebar-team-badge {
+    color: #a8d5ff;
+    border-color: rgba(65, 151, 235, .34);
+    background: rgba(19, 91, 160, .18);
+}
+.actions-theme .sidebar-team-badge span {
+    background: #4b9bfa;
+    box-shadow: 0 0 10px rgba(75, 155, 250, .62);
+}
+.actions-theme .integrated-nav-btn.active {
+    color: #eaf5ff;
+    border-color: rgba(76, 156, 255, .46);
+    background: linear-gradient(90deg, rgba(27, 104, 184, .34), rgba(31, 91, 151, .16));
+    box-shadow: inset 3px 0 0 #4b9bfa;
+}
+.actions-theme .integrated-nav-btn:hover,
+.actions-theme .hub-action:hover,
+.actions-theme .mini-btn:not(.danger):hover {
+    border-color: rgba(76, 156, 255, .60);
+}
+.actions-theme .primary-button,
+.actions-theme .primary-button:hover,
+.actions-theme .quick-event.active,
+.actions-theme .quick-event.selected {
+    border-color: rgba(83, 166, 255, .58);
+    background: linear-gradient(135deg, #155da9, #287ed2);
+    box-shadow: 0 8px 20px rgba(14, 83, 151, .24);
+}
+.actions-theme .ops-card,
+.actions-theme .action-page .ops-card,
+.actions-theme .action-page .actions-dashboard-hero,
+.actions-theme .action-page .ops-stat,
+.actions-theme .action-page .hub-action {
+    border-color: rgba(75, 147, 220, .22);
+}
+.actions-theme .action-page .ops-card-head h3,
+.actions-theme .action-page h2,
+.actions-theme .action-page h3 {
+    text-decoration-color: rgba(75, 155, 250, .5);
+}
+.actions-theme .action-page input:focus,
+.actions-theme .action-page select:focus,
+.actions-theme .action-page textarea:focus {
+    border-color: rgba(76, 156, 255, .75);
+    box-shadow: 0 0 0 3px rgba(42, 125, 208, .16);
+}
+.actions-theme .action-page .ops-pill,
+.actions-theme .action-page .host-eyebrow {
+    color: #8fc8ff;
+}
+
+
+/* =========================================================
+   SCHEDULE WORKSPACE COLOUR KEY: ACTIONS BLUE / EVENTS RED
+   ========================================================= */
+.schedule-type-legend {
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    padding:0 2px 12px; color:var(--muted); font-size:11px; font-weight:800;
+}
+.schedule-legend-item { display:inline-flex; align-items:center; gap:7px; }
+.schedule-legend-swatch { width:10px; height:10px; display:inline-block; border-radius:3px; }
+.schedule-legend-swatch.action { background:#2478d4; box-shadow:0 0 10px rgba(36,120,212,.35); }
+.schedule-legend-swatch.event { background:#d61f3a; box-shadow:0 0 10px rgba(214,31,58,.30); }
+.calendar-event.calendar-action-entry, .agenda-event.calendar-action-entry {
+    --event-colour:#2478d4 !important;
+    border-color:rgba(36,120,212,.48);
+    border-left-color:#2478d4;
+    background:linear-gradient(110deg,rgba(36,120,212,.20),rgba(13,22,34,.96) 72%);
+}
+.calendar-event.calendar-event-entry, .agenda-event.calendar-event-entry {
+    --event-colour:#d61f3a !important;
+    border-left-color:#d61f3a;
+}
+.calendar-event.calendar-action-entry:hover, .agenda-event.calendar-action-entry:hover {
+    background:linear-gradient(110deg,rgba(36,120,212,.29),rgba(13,22,34,.96) 72%);
+}
+.month-schedule-summary {
+    width:100%; display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:wrap;
+    margin-top:4px; padding:5px 6px; border:1px solid var(--line); border-radius:7px;
+    background:rgba(8,14,23,.72); cursor:pointer;
+}
+.month-summary-count { display:inline-flex; align-items:center; gap:4px; font-size:9px; font-weight:800; white-space:nowrap; }
+.month-summary-count i { width:6px; height:6px; border-radius:2px; display:inline-block; }
+.month-summary-count.action { color:#8fc5ff; }
+.month-summary-count.action i { background:#2478d4; }
+.month-summary-count.event { color:#ff9aaa; }
+.month-summary-count.event i { background:#d61f3a; }
+
+/* =========================================================
+   WORKSPACE THEME CONSISTENCY + STAFF ALLOCATION POLISH
+   Keep the active workspace palette consistent across every view.
+   ========================================================= */
+.schedule-app {
+    --workspace-accent: #d61f3a;
+    --workspace-accent-2: #ef334f;
+    --workspace-accent-soft: rgba(214,31,58,.16);
+    --workspace-border: rgba(214,31,58,.30);
+    transition: background-color .18s ease, border-color .18s ease;
+}
+.schedule-app.actions-theme {
+    --workspace-accent: #2878d0;
+    --workspace-accent-2: #4b9bfa;
+    --workspace-accent-soft: rgba(40,120,208,.17);
+    --workspace-border: rgba(89,169,250,.32);
+}
+.schedule-app .schedule-header,
+.schedule-app .integrated-sidebar,
+.schedule-app .operations-main,
+.schedule-app .operations-content,
+.schedule-app .ops-card,
+.schedule-app .calendar-toolbar,
+.schedule-app .calendar-grid,
+.schedule-app .director-workspace-switcher,
+.schedule-app .director-staff-result,
+.schedule-app .director-team-allocation {
+    transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease;
+}
+.schedule-app .workspace-switch-btn.active {
+    background: linear-gradient(135deg, var(--workspace-accent), var(--workspace-accent-2));
+    box-shadow: 0 0 13px var(--workspace-accent-soft);
+    color: #fff;
+}
+.schedule-app .primary-button,
+.schedule-app .integrated-nav-btn.active,
+.schedule-app .sidebar-team-badge,
+.schedule-app .ops-pill,
+.schedule-app .quick-event.active,
+.schedule-app .quick-event.selected {
+    transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.schedule-app .primary-button {
+    border-color: var(--workspace-border);
+}
+.schedule-app .integrated-nav-btn.active {
+    border-color: var(--workspace-border);
+}
+.schedule-app .ops-card,
+.schedule-app .director-staff-result {
+    border-color: var(--workspace-border);
+}
+.schedule-app .director-team-allocation {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) minmax(160px, 220px) auto;
+    align-items: end;
+    gap: 10px;
+    padding: 13px 14px;
+    margin-top: 12px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 12px;
+    background: linear-gradient(110deg, var(--workspace-accent-soft), rgba(8,13,23,.34));
+}
+.schedule-app .director-team-allocation label {
+    display: block;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+}
+.schedule-app .director-team-allocation select,
+.schedule-app .director-staff-controls select,
+.schedule-app .director-staff-search-form input {
+    min-height: 40px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 9px;
+    background: rgba(5,10,19,.82);
+    color: var(--text);
+    padding: 9px 11px;
+    font: inherit;
+    font-size: 12px;
+    outline: none;
+}
+.schedule-app .director-team-allocation select:focus,
+.schedule-app .director-staff-controls select:focus,
+.schedule-app .director-staff-search-form input:focus {
+    border-color: var(--workspace-accent-2);
+    box-shadow: 0 0 0 3px var(--workspace-accent-soft);
+}
+.schedule-app .director-team-allocation button {
+    min-height: 40px;
+    white-space: nowrap;
+}
+.schedule-app .director-staff-result {
+    padding: 16px;
+    border-radius: 14px;
+    background: linear-gradient(145deg, rgba(255,255,255,.025), rgba(7,12,22,.20));
+}
+.schedule-app .director-staff-meta > div {
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 9px;
+    background: rgba(0,0,0,.12);
+}
+.schedule-app .director-staff-meta strong {
+    overflow-wrap: anywhere;
+}
+.schedule-app .director-staff-controls {
+    margin-top: 12px;
+    align-items: center;
+}
+.schedule-app .director-staff-termination {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-top: 12px;
+    margin-top: 12px;
+    border-top: 1px solid rgba(255,255,255,.08);
+}
+.schedule-app .director-staff-termination small {
+    flex: 1 1 220px;
+}
+.schedule-app .director-workspace-switcher {
+    padding: 4px;
+    gap: 4px;
+    border-color: var(--workspace-border);
+    border-radius: 12px;
+    background: rgba(5,10,19,.82);
+}
+.schedule-app .workspace-switch-btn {
+    min-height: 34px;
+    padding-inline: 13px;
+    border-radius: 8px;
+    transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.schedule-app .sidebar-team-badge {
+    transition: color .18s ease, background .18s ease, border-color .18s ease;
+}
+@media (max-width: 760px) {
+    .schedule-app .director-team-allocation {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+    .schedule-app .director-team-allocation button { width: 100%; }
+    .schedule-app .director-workspace-switcher { max-width: 100%; flex-wrap: wrap; }
+    .schedule-app .workspace-switch-btn { padding-inline: 9px; font-size: 8px; }
+}
+
+/* KNG Leadership allocation */
+.roster-leadership-panel{border:1px solid rgba(80,125,190,.42);background:linear-gradient(135deg,rgba(31,64,105,.10),rgba(20,32,52,.04));}
+.leadership-allocate-btn{border-color:rgba(80,125,190,.5);}
+
+/* =========================================================
+   ACTIONS WORKSPACE · UNIFIED VISUAL SYSTEM
+   One typography scale, one blue palette, consistent navigation,
+   cards, forms and controls across every Actions screen.
+   Scoped to .actions-theme so Interactions keeps its red identity.
+   ========================================================= */
+.actions-theme {
+    --red: #2878d0;
+    --red-2: #4b9bfa;
+    --red-soft: rgba(40,120,208,.16);
+    --blue: #73baff;
+    --line: rgba(89,169,250,.20);
+    --line-strong: rgba(89,169,250,.34);
+    --workspace-accent: #2878d0;
+    --workspace-accent-2: #4b9bfa;
+    --workspace-accent-soft: rgba(40,120,208,.17);
+    --workspace-border: rgba(89,169,250,.32);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: #edf5ff;
+}
+.actions-theme,
+.actions-theme *:not(i):not(svg):not(path):not(code):not(pre) {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.actions-theme code,
+.actions-theme pre,
+.actions-theme .command-code,
+.actions-theme .action-ids-cell {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.actions-theme h1,
+.actions-theme h2,
+.actions-theme h3,
+.actions-theme h4,
+.actions-theme .ops-card-head h3,
+.actions-theme .schedule-brand h1 {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: -.025em;
+    font-weight: 750;
+}
+.actions-theme .schedule-header,
+.actions-theme .integrated-sidebar,
+.actions-theme .operations-main,
+.actions-theme .operations-content,
+.actions-theme .ops-card,
+.actions-theme .ops-stat,
+.actions-theme .action-page,
+.actions-theme .action-page * {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.actions-theme .integrated-sidebar {
+    border-right-color: rgba(89,169,250,.18);
+    background: linear-gradient(180deg, rgba(5,13,25,.96), rgba(6,17,32,.90));
+}
+.actions-theme .sidebar-section-label,
+.actions-theme .integrated-sidebar .integrated-nav-btn .nav-icon {
+    color: #78baff;
+}
+.actions-theme .sidebar-team-badge,
+.actions-theme .sidebar-team-badge.team-actions {
+    color: #a8d5ff;
+    border-color: rgba(89,169,250,.34);
+    background: rgba(24,93,168,.18);
+}
+.actions-theme .sidebar-team-badge span,
+.actions-theme .sidebar-team-badge.team-actions span {
+    background: #4b9bfa;
+    box-shadow: 0 0 10px rgba(75,155,250,.62);
+}
+.actions-theme .integrated-sidebar .integrated-nav-btn {
+    min-height: 42px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: #a9b8cb;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0;
+    box-shadow: none;
+    transform: none;
+}
+.actions-theme .integrated-sidebar .integrated-nav-btn:hover {
+    color: #eff7ff;
+    border-color: rgba(89,169,250,.22);
+    background: rgba(40,120,208,.10);
+    transform: translateX(2px);
+}
+.actions-theme .integrated-sidebar .integrated-nav-btn.active {
+    color: #f2f8ff;
+    border-color: rgba(89,169,250,.38);
+    background: linear-gradient(100deg, rgba(30,105,184,.32), rgba(20,66,112,.16));
+    box-shadow: inset 3px 0 0 #4b9bfa, 0 5px 18px rgba(7,44,83,.18);
+}
+.actions-theme .director-workspace-switcher {
+    border-color: rgba(89,169,250,.28);
+    background: rgba(5,15,29,.86);
+}
+.actions-theme .workspace-switch-btn {
+    color: #b8c9dc;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .025em;
+}
+.actions-theme .workspace-switch-btn.active,
+.actions-theme .workspace-switch-btn[aria-pressed="true"] {
+    color: #fff;
+    background: linear-gradient(135deg, #155da9, #328ce8);
+}
+.actions-theme .ops-header .header-button,
+.actions-theme .ops-header .primary-button,
+.actions-theme .action-page .primary-button,
+.actions-theme .action-page .header-button,
+.actions-theme .action-page .mini-btn:not(.danger) {
+    border-color: rgba(89,169,250,.36);
+    font-family: inherit;
+    font-weight: 750;
+}
+.actions-theme .ops-header .header-button:hover,
+.actions-theme .action-page .header-button:hover,
+.actions-theme .action-page .mini-btn:not(.danger):hover {
+    border-color: rgba(110,184,255,.68);
+    background: rgba(40,120,208,.16);
+    color: #f2f8ff;
+}
+.actions-theme .primary-button,
+.actions-theme .primary-button:hover,
+.actions-theme .action-page .primary-button {
+    background: linear-gradient(135deg, #155da9, #287ed2);
+    border-color: rgba(89,169,250,.54);
+    color: #fff;
+    box-shadow: 0 7px 18px rgba(14,83,151,.20);
+}
+.actions-theme .ops-card,
+.actions-theme .ops-stat,
+.actions-theme .action-page .ops-card,
+.actions-theme .action-page .actions-dashboard-hero,
+.actions-theme .action-page .ops-stat,
+.actions-theme .action-page .hub-action {
+    border-color: rgba(89,169,250,.22);
+    background-color: rgba(8,23,42,.86);
+}
+.actions-theme .ops-card-head,
+.actions-theme .action-page .ops-card-head {
+    align-items: center;
+    gap: 14px;
+}
+.actions-theme .ops-card-head h3,
+.actions-theme .ops-card h3,
+.actions-theme .action-page h2,
+.actions-theme .action-page h3 {
+    color: #eef6ff;
+    font-size: 15px;
+    line-height: 1.3;
+}
+.actions-theme .ops-card-head small,
+.actions-theme .ops-subtle,
+.actions-theme .ops-muted,
+.actions-theme .action-page small {
+    line-height: 1.45;
+}
+.actions-theme .ops-pill,
+.actions-theme .action-page .ops-pill,
+.actions-theme .action-page .host-eyebrow {
+    color: #a9d6ff;
+    border-color: rgba(89,169,250,.28);
+    background: rgba(40,120,208,.16);
+}
+.actions-theme .ops-link,
+.actions-theme .action-page a:not(.danger-button) {
+    color: #82c2ff;
+}
+.actions-theme .integrated-nav-btn.active {
+    background: linear-gradient(135deg, rgba(21,93,169,.96), rgba(50,140,232,.84));
+    border-color: rgba(130,194,255,.42);
+    box-shadow: 0 7px 20px rgba(20,91,157,.22);
+}
+.actions-theme .action-page input:focus,
+.actions-theme .action-page select:focus,
+.actions-theme .action-page textarea:focus,
+.actions-theme .ops-form input:focus,
+.actions-theme .ops-form select:focus,
+.actions-theme .ops-form textarea:focus {
+    border-color: rgba(110,184,255,.78);
+    box-shadow: 0 0 0 3px rgba(40,120,208,.17);
+}
+.actions-theme .action-table th,
+.actions-theme .action-users-head {
+    color: #9bb8d5;
+    background: #0d2037;
+    border-bottom-color: rgba(89,169,250,.20);
+}
+.actions-theme .action-table-wrap,
+.actions-theme .action-table {
+    border-color: rgba(89,169,250,.20);
+}
+.actions-theme .action-schedule-event,
+.actions-theme .action-stat-pair>div,
+.actions-theme .action-users-row:hover {
+    border-color: rgba(89,169,250,.24);
+    background-color: rgba(21,73,119,.14);
+}
+.actions-theme .action-schedule-event {
+    border-left-color: var(--action-colour, #328ce8);
+}
+.actions-theme .goal-progress>div {
+    background: linear-gradient(90deg, #185da8, #4b9bfa);
+}
+.actions-theme .avatar,
+.actions-theme .action-leader-row .avatar {
+    background: linear-gradient(145deg, #328ce8, #123b68);
+}
+.actions-theme .action-page .event-submission-card {
+    border-left-color: #4b9bfa;
+}
+.actions-theme .action-page .ops-empty {
+    border-color: rgba(89,169,250,.28);
+}
+.actions-theme .action-page .action-type-chip {
+    border-left-color: var(--action-colour, #328ce8);
+}
+.actions-theme .ix-stat,
+.actions-theme .ix-panel,
+.actions-theme .ix-ann-card,
+.actions-theme .ix-goal-card {
+    border-color: rgba(89,169,250,.22);
+    background: linear-gradient(180deg, rgba(11,30,52,.96), rgba(7,19,35,.96));
+}
+.actions-theme .ix-pill,
+.actions-theme .ix-label,
+.actions-theme .ix-quick-grid button,
+.actions-theme .ix-frame-chip,
+.actions-theme .ix-small-btn {
+    border-color: rgba(89,169,250,.28);
+    background: rgba(40,120,208,.13);
+    color: #a9d6ff;
+}
+.actions-theme .ix-quick-grid button:hover,
+.actions-theme .ix-frame-chip:hover,
+.actions-theme .ix-frame-chip.active {
+    border-color: #4b9bfa;
+    background: rgba(40,120,208,.22);
+}
+.actions-theme .ix-avatar,
+.actions-theme .ix-progress span {
+    background: linear-gradient(135deg, #185da8, #4b9bfa);
+}
+.actions-theme .ix-ring {
+    background: conic-gradient(#4b9bfa var(--pct), #26364b 0);
+}
+.actions-theme .ix-schedule-list span,
+.actions-theme .ix-rank,
+.actions-theme .ix-points {
+    color: #82c2ff !important;
+}
+.actions-theme .ix-goal-card,
+.actions-theme .ix-ring:after {
+    background-color: #0a1b30;
+}
+.actions-theme .action-page .result-pill.negative {
+    /* Negative outcomes retain their semantic warning colour. */
+    background: rgba(239,51,79,.15);
+    color: #fb7185;
+}
+.actions-theme .ops-header .schedule-brand h1 {
+    font-size: 17px;
+    line-height: 1.2;
+}
+.actions-theme .operations-content {
+    padding-top: 2px;
+}
+.actions-theme .action-page {
+    gap: 16px;
+    color: #eaf3ff;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.actions-theme .action-page label {
+    color: #b8c9dc;
+    font-size: 11px;
+    font-weight: 700;
+}
+.actions-theme .action-page button,
+.actions-theme .action-page input,
+.actions-theme .action-page select,
+.actions-theme .action-page textarea {
+    font-family: inherit;
+}
+.actions-theme .action-page .ops-stat strong {
+    font-size: 27px;
+    letter-spacing: -.035em;
+}
+.actions-theme .action-page .ops-stat span {
+    color: #9bb8d5;
+    font-size: 10px;
+    letter-spacing: .10em;
+}
+@media (prefers-reduced-motion: reduce) {
+    .actions-theme *,
+    .actions-theme *::before,
+    .actions-theme *::after {
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
+/* =========================================================
+   KNG MOBILE-FIRST REFINEMENT · 2026-11
+   Consolidated final overrides for phones and small tablets.
+   Keeps the existing desktop layout and all workspace colours.
+   ========================================================= */
+:root { --mobile-gutter: 12px; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+*, *::before, *::after { box-sizing: border-box; }
+
+@media (max-width: 700px) {
+  body { min-width: 320px; overflow-x: hidden; background-attachment: scroll; }
+  #app, .schedule-app, .app-body, .operations-body, .schedule-main,
+  .operations-main, .operations-content, .action-page, .ix-integration-app {
+    min-width: 0 !important; max-width: 100% !important; width: 100% !important;
+  }
+  .schedule-header {
+    position: relative; top: auto; z-index: 30; padding: 12px var(--mobile-gutter);
+    gap: 10px; align-items: stretch; flex-direction: column;
+  }
+  .schedule-brand { min-width: 0; gap: 9px; }
+  .schedule-brand h1 { font-size: 17px !important; line-height: 1.15; }
+  .schedule-brand small, .schedule-brand p { font-size: 10px; }
+  .schedule-header-actions {
+    display: flex; width: 100%; max-width: 100%; gap: 7px;
+    flex-wrap: wrap; align-items: center; justify-content: flex-start;
+  }
+  .schedule-header-actions > * { max-width: 100%; }
+  .header-button, .primary-button, .secondary-button, .danger-button,
+  .workspace-switch-btn, .integrated-nav-btn, .view-switcher button {
+    min-height: 40px; font-size: 12px !important; line-height: 1.2;
+  }
+  .director-workspace-switcher { display: flex; width: 100%; max-width: 100%; gap: 6px; }
+  .director-workspace-switcher > * { flex: 1 1 0; min-width: 0; }
+  .workspace-switch-btn { padding: 8px 6px !important; white-space: normal; }
+
+  .app-body { display: flex !important; flex-direction: column !important; }
+  .integrated-sidebar {
+    position: sticky !important; top: 0 !important; z-index: 25; width: 100% !important;
+    flex: 0 0 auto !important; height: auto !important; min-height: 0 !important;
+    padding: 8px var(--mobile-gutter) !important; border-right: 0 !important;
+    border-bottom: 1px solid var(--line) !important; backdrop-filter: blur(16px);
+  }
+  .integrated-sidebar-nav {
+    display: flex !important; flex-direction: row !important; gap: 7px !important;
+    width: 100%; overflow-x: auto; overflow-y: hidden; padding: 2px 1px 7px;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .integrated-sidebar .integrated-nav-btn {
+    flex: 0 0 auto; width: auto !important; min-width: max-content !important;
+    min-height: 40px; padding: 8px 12px !important; border-radius: 10px;
+    scroll-snap-align: start; font-size: 11px !important;
+  }
+  .sidebar-spacer, .sidebar-access-card { display: none !important; }
+  .schedule-main, .operations-main {
+    width: 100% !important; padding: 14px var(--mobile-gutter) 28px !important;
+    margin: 0 !important; min-width: 0 !important;
+  }
+  .operations-content { max-width: none !important; }
+  .ops-header { gap: 8px; flex-wrap: wrap; }
+  .ops-header h1, .ops-header h2 { font-size: 21px !important; line-height: 1.2; }
+  .ops-card, .ix-panel, .ix-stat, .action-page .ops-card,
+  .staff-section, .roster-section, .leadership-panel {
+    min-width: 0; max-width: 100%; border-radius: 13px; padding: 13px !important;
+  }
+  .ops-card-head, .ix-panel-head { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+  .ops-card-head h3, .ix-panel-head h3 { font-size: 14px !important; }
+  .ops-stat { min-width: 0; padding: 12px !important; }
+  .ops-stat strong, .ix-stat strong { font-size: 25px !important; }
+  .ix-stat-row { grid-template-columns: repeat(2, minmax(0,1fr)) !important; gap: 9px !important; }
+  .ix-two-col, .two-column, .dashboard-grid, .action-dashboard-grid {
+    grid-template-columns: minmax(0,1fr) !important; gap: 12px !important;
+  }
+  .form-grid, .director-staff-search-form, .director-staff-controls {
+    grid-template-columns: minmax(0,1fr) !important; gap: 10px !important;
+  }
+  input, select, textarea { max-width: 100%; min-width: 0; font-size: 16px !important; }
+  button, select, input[type="checkbox"], input[type="radio"] { touch-action: manipulation; }
+  .form-field, .form-group { min-width: 0; }
+  .form-field.full, .full { grid-column: auto !important; }
+
+  /* Calendar: fit the month to the screen instead of forcing a 700px canvas. */
+  .calendar-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
+  .calendar-navigation { width: 100%; gap: 6px; }
+  .calendar-navigation h2 { flex: 1; min-width: 0; text-align: center; font-size: 16px !important; }
+  .calendar-navigation button { width: 38px; min-width: 38px; height: 38px; }
+  .view-switcher { display: flex; width: 100%; gap: 4px; }
+  .view-switcher button { flex: 1 1 0; min-width: 0; padding: 7px 3px; font-size: 11px !important; }
+  .month-calendar { width: 100%; max-width: 100%; overflow: hidden !important; }
+  .weekday-row, .month-grid { min-width: 0 !important; width: 100% !important; }
+  .weekday-row { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); }
+  .weekday-row > * { min-width: 0; padding: 6px 1px !important; font-size: 9px !important; text-align: center; }
+  .month-grid { grid-template-columns: repeat(7,minmax(0,1fr)) !important; grid-auto-rows: minmax(64px,auto) !important; }
+  .month-cell { min-width: 0; min-height: 64px !important; height: auto !important; padding: 4px 3px !important; }
+  .month-cell-header { height: auto; min-height: 20px; }
+  .month-day-number { width: 20px; height: 20px; min-width: 20px; font-size: 10px !important; }
+  .month-events { max-height: 38px !important; overflow: hidden; gap: 2px; }
+  .month-calendar .calendar-event { height: 17px !important; min-height: 17px !important; max-height: 17px !important; padding: 1px 3px !important; border-left-width: 2px; border-radius: 4px; display: flex; align-items: center; }
+  .month-calendar .calendar-event .event-time { display: none !important; }
+  .month-calendar .calendar-event strong { font-size: 8px !important; line-height: 14px !important; }
+  .month-calendar .calendar-event .event-type, .month-calendar .calendar-event .event-staff { display: none !important; }
+  .week-calendar, .day-calendar { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .week-header, .week-body { min-width: 620px; }
+  .day-header { gap: 8px; align-items: flex-start; flex-direction: column; }
+  .agenda-list { gap: 10px; }
+  .agenda-day { border-radius: 12px; }
+  .agenda-date { padding: 11px 13px; }
+  .agenda-event { grid-template-columns: 66px minmax(0,1fr) !important; gap: 8px !important; padding: 10px !important; }
+  .agenda-event > * { min-width: 0; }
+
+  /* Roster and tracker tables remain readable via contained horizontal scrolling. */
+  .action-table-wrap, .table-wrap, .roster-table-wrap, .staff-table-wrap,
+  .leaderboard-table-wrap, .data-table-wrap { width: 100%; max-width: 100%; overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .action-table, .roster-table, .staff-table, .leaderboard-table { min-width: 640px; }
+  .staff-list { grid-template-columns: minmax(0,1fr) !important; }
+  .director-team-allocation { grid-template-columns: minmax(0,1fr) !important; gap: 8px; }
+  .director-team-allocation button { width: 100%; }
+  .access-request-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .access-request-actions { width: 100%; display: grid; grid-template-columns: minmax(0,1fr); }
+  .access-request-actions button, .access-request-actions select { width: 100%; }
+  .roster-access, .hof-photo-actions { flex-wrap: wrap; }
+
+  /* Modals become phone-friendly sheets with reachable actions. */
+  .modal-backdrop { align-items: flex-end !important; padding: 0 !important; }
+  .modal { width: 100% !important; max-width: 100% !important; max-height: min(90dvh, 760px) !important; margin: 0 !important; border-radius: 18px 18px 0 0 !important; overflow-y: auto; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  .modal-header { position: sticky; top: 0; z-index: 3; background: inherit; }
+  .modal-footer, .modal-actions, .form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .modal-footer button, .modal-actions button, .form-actions button { flex: 1 1 120px; min-height: 42px; }
+  .schedule-main, .operations-main { padding-bottom: max(28px, env(safe-area-inset-bottom)) !important; }
+}
+
+@media (max-width: 390px) {
+  :root { --mobile-gutter: 9px; }
+  .schedule-brand h1 { font-size: 15px !important; }
+  .schedule-header-actions { gap: 5px; }
+  .header-button, .primary-button, .secondary-button, .danger-button { padding-inline: 8px !important; font-size: 11px !important; }
+  .integrated-sidebar .integrated-nav-btn { padding-inline: 10px !important; }
+  .month-grid { grid-auto-rows: minmax(56px,auto) !important; }
+  .month-cell { min-height: 56px !important; padding: 3px 2px !important; }
+  .month-calendar .calendar-event strong { font-size: 7px !important; }
+  .ix-stat-row { gap: 7px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .integrated-sidebar-nav, .month-day-number, .calendar-event, .ops-card, .ix-panel { scroll-behavior: auto !important; transition: none !important; }
+}
+
+
+/* Leaderboard simplification: keep the two useful summaries clean and stacked. */
+.ix-leaderboard-page{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}.ix-leaderboard-page>.ix-panel{min-width:0}.ix-leaderboard-page>.ix-panel{min-width:0}.ix-popular-events .ix-table-row{align-items:center}.ix-popular-events .ix-grow{display:flex;flex-direction:column;gap:4px}.ix-popular-events .ix-grow small{color:#8d93a7;font-size:11px}.ix-popular-events .ix-table-row>span:last-child{text-align:right;min-width:118px}.ix-popular-events .ix-table-row>span:last-child b{font-size:17px}.ix-popular-events .ix-table-row>span:last-child small{display:block;color:#8d93a7;font-size:10px}
+
+/* Leaderboard side-by-side desktop layout with a clean mobile stack */
+@media (max-width: 900px){.ix-leaderboard-page{grid-template-columns:minmax(0,1fr)}}
+
+/* Admin-managed event and BR catalogue */
+.catalogue-manager-modal{max-width:980px;width:min(96vw,980px)}
+.catalogue-manager-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.catalogue-list{display:grid;gap:6px;max-height:340px;overflow:auto;margin-top:12px}
+.catalogue-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid var(--border,#263244);border-radius:9px;background:rgba(255,255,255,.025)}
+.catalogue-row span{font-weight:600;overflow-wrap:anywhere}
+.catalogue-row .danger{color:#ff7185}
+@media(max-width:700px){.catalogue-manager-grid{grid-template-columns:1fr}.catalogue-manager-modal{max-height:92vh;overflow:auto}}
+
+/* Helper multi-allocation control */
+.helper-assignment-form select[multiple]{
+  min-height:148px;
+  padding:8px;
+  line-height:1.5;
+}
+.helper-assignment-form select[multiple] option{
+  padding:6px 8px;
+  border-radius:5px;
+}
+.helper-assignment-form .field-hint{
+  display:block;
+  color:var(--muted,#94a3b8);
+  font-size:.78rem;
+  font-weight:500;
+  margin:3px 0 6px;
+}
+
+
+/* =========================================================
+   KNG VISUAL SYSTEM CLEANUP · NOVEMBER 2026
+   Shared component geometry and typography across every workspace.
+   Workspace colours remain theme tokens; layout never changes by theme.
+   ========================================================= */
+.schedule-app {
+  --ui-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-control-height: 38px;
+  --ui-radius: 9px;
+  --ui-radius-card: 14px;
+  --ui-text-sm: 12px;
+  --ui-text-xs: 11px;
+  font-family: var(--ui-font);
+}
+.schedule-app .schedule-header {
+  min-height: 76px;
+  padding: 10px 24px;
+  gap: 20px;
+}
+.schedule-app .schedule-header-actions {
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+.schedule-app .director-workspace-switcher {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid var(--workspace-border);
+  border-radius: 12px;
+  background: rgba(5,10,19,.88);
+}
+.schedule-app .workspace-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  color: #aab7c8;
+  background: transparent;
+  font-family: var(--ui-font);
+  font-size: 11px !important;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .055em;
+  white-space: nowrap;
+}
+.schedule-app .workspace-switch-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,.07);
+}
+.schedule-app .workspace-switch-btn.active {
+  color: #fff;
+  background: linear-gradient(135deg,var(--workspace-accent),var(--workspace-accent-2));
+  box-shadow: 0 4px 14px var(--workspace-accent-soft);
+}
+.schedule-app .integrated-sidebar .integrated-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-family: var(--ui-font);
+  font-size: 12px !important;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.schedule-app .integrated-sidebar .integrated-nav-btn .nav-icon {
+  flex: 0 0 21px;
+  width: 21px;
+  font-size: 14px;
+  line-height: 1;
+}
+.schedule-app .integrated-sidebar .integrated-nav-btn.active {
+  color: #fff;
+  border-color: var(--workspace-border);
+  background: linear-gradient(90deg,var(--workspace-accent-soft),rgba(8,13,23,.2));
+  box-shadow: inset 3px 0 0 var(--workspace-accent-2);
+}
+.schedule-app .integrated-sidebar .integrated-nav-btn:hover {
+  color: #fff;
+  border-color: var(--workspace-border);
+  transform: none;
+}
+.schedule-app .ops-header h1,
+.schedule-app .ops-header h2,
+.schedule-app .operations-content h1,
+.schedule-app .operations-content h2,
+.schedule-app .action-page h2,
+.schedule-app .ix-integration-app h2 {
+  font-size: clamp(20px,2vw,25px);
+  line-height: 1.2;
+  letter-spacing: -.025em;
+}
+.schedule-app .ops-card,
+.schedule-app .ix-panel,
+.schedule-app .action-page .ops-card {
+  border-radius: var(--ui-radius-card);
+}
+.schedule-app button.primary-button,
+.schedule-app button.secondary-button,
+.schedule-app button.header-button,
+.schedule-app button.danger-button {
+  min-height: var(--ui-control-height);
+  padding: 0 13px;
+  border-radius: var(--ui-radius);
+  font-family: var(--ui-font);
+  font-size: 12px !important;
+  font-weight: 750;
+  line-height: 1.2;
+}
+.schedule-app input:not([type="checkbox"]):not([type="radio"]),
+.schedule-app select,
+.schedule-app textarea,
+.schedule-app .ops-form input,
+.schedule-app .ops-form select,
+.schedule-app .ops-form textarea,
+.schedule-app .host-form-grid input,
+.schedule-app .host-form-grid select,
+.schedule-app .host-form-grid textarea {
+  min-height: 39px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background-color: rgba(5,10,19,.92);
+  color: var(--text);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  line-height: 1.4;
+  color-scheme: dark;
+}
+.schedule-app textarea { min-height: 88px; padding: 10px 11px; }
+.schedule-app input::placeholder,
+.schedule-app textarea::placeholder { color: #73849a; opacity: 1; }
+.schedule-app select option { background: #0d1726; color: #f7f9fc; }
+.schedule-app .ops-form label,
+.schedule-app .form-field label,
+.schedule-app .host-form-grid label {
+  color: #dce5f0;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+.schedule-app .ops-table th,
+.schedule-app .action-table th,
+.schedule-app .staff-table th,
+.schedule-app .roster-table th {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+.schedule-app .ops-table td,
+.schedule-app .action-table td,
+.schedule-app .staff-table td,
+.schedule-app .roster-table td {
+  font-size: 12px;
+  line-height: 1.4;
+}
+.schedule-app .ops-pill,
+.schedule-app .mode-badge {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .045em;
+}
+.schedule-app .catalogue-manager-modal .catalogue-row {
+  min-height: 48px;
+  border-color: var(--workspace-border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+}
+.schedule-app .action-catalogue-row.is-inactive { opacity: .68; }
+.schedule-app .action-catalogue-edit {
+  display: grid;
+  grid-template-columns: minmax(140px,1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.schedule-app .action-catalogue-edit input {
+  width: 100%;
+  min-width: 0;
+}
+.schedule-app .catalogue-status {
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .07em;
+}
+.schedule-app .catalogue-status.active { color: #55d6a2; }
+.schedule-app .catalogue-status.inactive { color: #f0b85a; }
+.schedule-app .catalogue-reactivate { border-color: rgba(85,214,162,.4); color: #7ce0b5; }
+.schedule-app .action-catalogue-add {
+  display: grid;
+  grid-template-columns: minmax(180px,1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+.schedule-app .action-catalogue-add label { display: grid; gap: 6px; }
+@media (max-width: 900px) {
+  .schedule-app .schedule-header { align-items: flex-start; flex-wrap: wrap; }
+  .schedule-app .schedule-header-actions { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .schedule-app .director-workspace-switcher { width: 100%; min-height: 42px; }
+  .schedule-app .workspace-switch-btn { min-width: 0; flex: 1 1 0; padding: 0 6px; font-size: 10px !important; }
+  .schedule-app .action-catalogue-edit { grid-template-columns: minmax(0,1fr) auto auto; }
+  .schedule-app .action-catalogue-edit input { grid-column: 1 / -1; }
+  .schedule-app .action-catalogue-add { grid-template-columns: minmax(0,1fr); }
+}
+
+
+/* Actions is a blue workspace: tracker and schedule accents must not inherit
+   legacy pink/red event-type colours from the shared event_types table. */
+.actions-theme .action-page .action-schedule-event,
+.actions-theme .action-page .action-type-chip {
+  border-left-color: #4b9bfa !important;
+}
+.actions-theme .action-page .action-schedule-event {
+  box-shadow: inset 0 0 0 1px rgba(89,169,250,.13), 0 5px 18px rgba(4,25,49,.14);
+}
